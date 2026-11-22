@@ -55,45 +55,70 @@ class _FileApi extends MuseApi {
 }
 
 void main() {
-  testWidgets('workspace menu opens nested files and retries with raw source', (
-    tester,
-  ) async {
-    final api = _FileApi();
-    final chat = ChatController(api, () => api);
-    addTearDown(chat.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: museTheme(Brightness.light),
-        home: ChatPage(chat: chat, onConnection: () {}),
-      ),
-    );
-    await tester.tap(find.byTooltip('切换会话'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('工作区文件'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(_directory));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(_filename));
-    await tester.pumpAndSettle();
-    expect(find.text('这个文件已不存在'), findsOneWidget);
+  testWidgets(
+    'left navigation opens nested files and retries with raw source',
+    (tester) async {
+      final api = _FileApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: museTheme(Brightness.light),
+          home: ChatPage(chat: chat, onConnection: () {}),
+        ),
+      );
+      final menuButton = find.byTooltip('打开导航菜单');
+      await tester.tap(menuButton);
+      await tester.pumpAndSettle();
+      final drawer = find.byType(Drawer);
+      final bounds = tester.getRect(drawer);
+      expect(bounds.topLeft, Offset.zero);
+      expect(
+        bounds.height,
+        tester.view.physicalSize.height / tester.view.devicePixelRatio,
+      );
+      expect(
+        bounds.width,
+        lessThan(tester.view.physicalSize.width / tester.view.devicePixelRatio),
+      );
 
-    api.missing = false;
-    await tester.tap(find.text('重试'));
-    await tester.pumpAndSettle();
-    expect(find.text(_source), findsOneWidget);
-    expect(find.text('文件原文'), findsNothing);
-    expect(api.requests, [
-      ('/api/workspace/files', '.'),
-      ('/api/workspace/files', _directory),
-      (workspaceFileContentPath, _filePath),
-      (workspaceFileContentPath, _filePath),
-    ]);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text(_filename), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text('工作区文件'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(drawer, findsNothing);
+      await tester.tap(menuButton);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: drawer, matching: find.text('工作区文件')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_directory));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_filename));
+      await tester.pumpAndSettle();
+      expect(find.text('这个文件已不存在'), findsOneWidget);
+
+      api.missing = false;
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+      expect(find.text(_source), findsOneWidget);
+      expect(find.text('文件原文'), findsNothing);
+      expect(api.requests, [
+        ('/api/workspace/files', '.'),
+        ('/api/workspace/files', _directory),
+        (workspaceFileContentPath, _filePath),
+        (workspaceFileContentPath, _filePath),
+      ]);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text(_filename), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('工作区文件'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(menuButton, findsOneWidget);
+      expect(drawer, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

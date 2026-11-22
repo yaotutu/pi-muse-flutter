@@ -7,8 +7,6 @@ import 'chat_message_view.dart';
 import 'workspace_files.dart';
 import 'workspace_files_page.dart';
 
-enum _ChatMenuAction { createSession, workspaceFiles }
-
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.chat, required this.onConnection});
 
@@ -50,102 +48,79 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
-  Future<void> _pickSession() async {
-    _focus.unfocus();
-    final choice = await showModalBottomSheet<Object>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => ListenableBuilder(
-        listenable: _chat,
-        builder: (context, _) => DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.53,
-          minChildSize: 0.32,
-          maxChildSize: 0.84,
-          builder: (context, scroll) => SafeArea(
-            top: false,
-            child: ListView(
-              controller: scroll,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 0, 12, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '会话',
-                          style: Theme.of(context).textTheme.titleLarge,
+  Widget _buildDrawer(BuildContext context) {
+    final scaffold = Scaffold.of(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Drawer(
+      semanticLabel: '会话导航',
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: const Text('工作区文件'),
+              enabled: !_chat.expired,
+              onTap: _chat.expired
+                  ? null
+                  : () {
+                      scaffold.closeDrawer();
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => WorkspaceFilesPage(
+                            files: WorkspaceFiles(_chat.api),
+                          ),
                         ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _chat.synchronized
-                            ? () => Navigator.pop(
-                                context,
-                                _ChatMenuAction.createSession,
-                              )
-                            : null,
-                        label: const Text('新建'),
-                        icon: const Icon(Icons.add),
-                      ),
-                    ],
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: const Text('工作区文件'),
-                  trailing: const Icon(Icons.chevron_right),
-                  enabled: !_chat.expired,
-                  onTap: _chat.expired
-                      ? null
-                      : () => Navigator.pop(
-                          context,
-                          _ChatMenuAction.workspaceFiles,
-                        ),
-                ),
-                const Divider(height: 1),
-                if (_chat.directoryError case final String error)
-                  ListTile(title: Text(error), onTap: _chat.refreshDirectory),
-                for (final session in _chat.sessions)
-                  ListTile(
-                    title: Text(session.title),
-                    leading: Icon(
-                      session.id == mainSession
-                          ? Icons.home_outlined
-                          : Icons.chat_bubble_outline,
-                    ),
-                    trailing: session.id == _chat.activeId
-                        ? const Icon(Icons.check)
-                        : null,
-                    selected: session.id == _chat.activeId,
-                    onTap: () => Navigator.pop(context, session.id),
-                  ),
-              ],
+                      );
+                    },
             ),
-          ),
+            const Divider(indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text('会话', style: theme.textTheme.titleSmall),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('新建会话'),
+              enabled: _chat.synchronized,
+              onTap: _chat.synchronized
+                  ? () {
+                      scaffold.closeDrawer();
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => _NewSessionDialog(chat: _chat),
+                      );
+                    }
+                  : null,
+            ),
+            if (_chat.directoryError case final String error)
+              ListTile(title: Text(error), onTap: _chat.refreshDirectory),
+            for (final session in _chat.sessions)
+              ListTile(
+                shape: const StadiumBorder(),
+                title: Text(
+                  session.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                leading: Icon(
+                  session.id == mainSession
+                      ? Icons.home_outlined
+                      : Icons.chat_bubble_outline,
+                ),
+                selected: session.id == _chat.activeId,
+                selectedColor: colors.onSecondaryContainer,
+                selectedTileColor: colors.secondaryContainer,
+                onTap: () {
+                  scaffold.closeDrawer();
+                  _chat.select(session.id);
+                },
+              ),
+          ],
         ),
       ),
     );
-    if (!mounted) return;
-    switch (choice) {
-      case String id:
-        _chat.select(id);
-      case _ChatMenuAction.createSession:
-        await showDialog<void>(
-          context: context,
-          builder: (context) => _NewSessionDialog(chat: _chat),
-        );
-      case _ChatMenuAction.workspaceFiles:
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) =>
-                WorkspaceFilesPage(files: WorkspaceFiles(_chat.api)),
-          ),
-        );
-      case null:
-        break;
-    }
   }
 
   Future<void> _openApproval() async {
@@ -211,15 +186,25 @@ class _ChatPageState extends State<ChatPage> {
             ? null
             : _chat.activityLabel;
         return Scaffold(
+          drawer: Builder(builder: _buildDrawer),
+          onDrawerChanged: (open) {
+            // 抽屉只改变当前路由的本地历史，主动同步 Android 的返回处理状态。
+            NavigationNotification(canHandlePop: open).dispatch(context);
+          },
           appBar: AppBar(
             backgroundColor: colors.surface,
             foregroundColor: colors.onSurface,
             scrolledUnderElevation: 0,
             titleSpacing: 4,
-            leading: IconButton(
-              onPressed: _pickSession,
-              tooltip: '切换会话',
-              icon: const Icon(Icons.menu_rounded),
+            leading: Builder(
+              builder: (context) => IconButton(
+                onPressed: () {
+                  _focus.unfocus();
+                  Scaffold.of(context).openDrawer();
+                },
+                tooltip: '打开导航菜单',
+                icon: const Icon(Icons.menu_rounded),
+              ),
             ),
             title: Text(
               title,
