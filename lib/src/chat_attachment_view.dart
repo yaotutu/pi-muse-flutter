@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 
 import 'chat_attachment.dart';
+import 'file_size.dart';
 
 class ChatAttachmentTile extends StatelessWidget {
   const ChatAttachmentTile({
@@ -69,7 +70,7 @@ class ChatAttachmentTile extends StatelessWidget {
                               style: theme.textTheme.bodyMedium,
                             ),
                             Text(
-                              _sizeLabel(attachment.size),
+                              formatFileSize(attachment.size),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.labelSmall?.copyWith(
@@ -136,9 +137,3 @@ ImageProvider _imageProvider(Uint8List bytes, int bound) => ResizeImage(
   height: bound,
   policy: ResizeImagePolicy.fit,
 );
-
-String _sizeLabel(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KiB';
-  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MiB';
-}

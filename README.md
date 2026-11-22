@@ -12,6 +12,12 @@
 
 发送后，附件随用户消息显示。点图片可打开预览，文本附件显示名称和大小。图片理解取决于当前服务端配置的模型。发送结果不明时，先点「核对发送结果」。确认消息未保存时，原附件和文字会恢复到当前会话的草稿。
 
+### 浏览工作区文件
+
+打开聊天左上角的会话菜单，点「工作区文件」。列表显示连接服务器上的共享工作区，所有会话打开的是同一目录。点文件夹进入下一级，点「刷新目录」更新列表，返回键可逐级返回。
+
+文本以可选择的原文显示，Markdown、HTML 和 SVG 都按文本打开。PNG、JPEG、GIF、WebP 可缩放预览，其他二进制文件显示名称和大小。服务端单文件读取上限为 8 MiB。本入口提供浏览和预览。
+
 ### 本地运行和检查
 
 需要 Flutter 3.50.1、JDK 17 或兼容版本、Android SDK 36 和 Android 模拟器。在本目录执行：
@@ -37,6 +43,12 @@ The Material top app bar shows the conversation picker on the left, the current 
 Tap **添加附件** on the left of the composer and choose images or text files in the Android file picker. Review or remove the files above the composer, then send them with or without a message. Each message can include up to four files and 8 MiB in total, with a shared limit of 100,000 bytes for text. Supported formats are PNG, JPEG, GIF, WebP, and valid UTF-8 text.
 
 Attachments appear with the user message after sending. Tap an image to preview it. Text attachments show their name and size. Image understanding depends on the model configured on the server. If delivery is uncertain, tap **核对发送结果**. Once the app confirms the message was not saved, it restores the original files and text to that conversation's draft.
+
+### Browse workspace files
+
+Open the menu in the top-left corner of the chat and tap **工作区文件**. Every conversation shares the same workspace on the connected server. Tap a folder to open it, use **刷新目录** to refresh the list, and use Back to return to its parent.
+
+Text files open as selectable source, including Markdown, HTML, and SVG. PNG, JPEG, GIF, and WebP images can be zoomed. Other binary files show their name and size. The server reads files up to 8 MiB. This screen provides browsing and previews.
 
 ### Run and check locally
 

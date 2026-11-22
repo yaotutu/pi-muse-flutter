@@ -4,6 +4,10 @@ import 'package:material_ui/material_ui.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
+import 'workspace_files.dart';
+import 'workspace_files_page.dart';
+
+enum _ChatMenuAction { createSession, workspaceFiles }
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.chat, required this.onConnection});
@@ -48,7 +52,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _pickSession() async {
     _focus.unfocus();
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showModalBottomSheet<Object>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -77,7 +81,10 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                       TextButton.icon(
                         onPressed: _chat.synchronized
-                            ? () => Navigator.pop(context, '')
+                            ? () => Navigator.pop(
+                                context,
+                                _ChatMenuAction.createSession,
+                              )
                             : null,
                         label: const Text('新建'),
                         icon: const Icon(Icons.add),
@@ -85,6 +92,19 @@ class _ChatPageState extends State<ChatPage> {
                     ],
                   ),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: const Text('工作区文件'),
+                  trailing: const Icon(Icons.chevron_right),
+                  enabled: !_chat.expired,
+                  onTap: _chat.expired
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _ChatMenuAction.workspaceFiles,
+                        ),
+                ),
+                const Divider(height: 1),
                 if (_chat.directoryError case final String error)
                   ListTile(title: Text(error), onTap: _chat.refreshDirectory),
                 for (final session in _chat.sessions)
@@ -107,15 +127,25 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
     );
-    if (!mounted || choice == null) return;
-    if (choice.isNotEmpty) {
-      _chat.select(choice);
-      return;
+    if (!mounted) return;
+    switch (choice) {
+      case String id:
+        _chat.select(id);
+      case _ChatMenuAction.createSession:
+        await showDialog<void>(
+          context: context,
+          builder: (context) => _NewSessionDialog(chat: _chat),
+        );
+      case _ChatMenuAction.workspaceFiles:
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) =>
+                WorkspaceFilesPage(files: WorkspaceFiles(_chat.api)),
+          ),
+        );
+      case null:
+        break;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _NewSessionDialog(chat: _chat),
-    );
   }
 
   Future<void> _openApproval() async {

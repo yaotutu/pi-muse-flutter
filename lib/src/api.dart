@@ -157,6 +157,10 @@ const _errorReadTimeout = Duration(seconds: 3);
 const _workspaceIdleTimeout = Duration(seconds: 75);
 const _maxRestBytes = 32 * 1024 * 1024;
 const _maxErrorBytes = 64 * 1024;
+const workspaceFileContentPath = '/api/workspace/files/content';
+const maxWorkspaceFileBytes = 8 * 1024 * 1024;
+// 文件原文中的控制字符在 JSON 中可能编码成 6 字节，另留文件元数据的空间。
+const _maxWorkspaceFileResponseBytes = maxWorkspaceFileBytes * 6 + 64 * 1024;
 final _errorCode = RegExp(r'^[A-Z][A-Z0-9_]{0,63}$');
 
 class MuseApi {
@@ -194,7 +198,9 @@ class MuseApi {
       return await _readJson(
         response,
         _restTimeout - elapsed.elapsed,
-        _maxRestBytes,
+        path == workspaceFileContentPath
+            ? _maxWorkspaceFileResponseBytes
+            : _maxRestBytes,
       );
     } catch (error) {
       throw _safeError(error);
