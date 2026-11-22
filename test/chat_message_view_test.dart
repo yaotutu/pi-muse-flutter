@@ -133,9 +133,11 @@ void main() {
       final colors = museTheme(brightness).colorScheme;
       for (final (text, surface) in [
         (colors.onSurface, colors.surface),
+        (colors.onSurface, colors.surfaceContainerLow),
         (colors.onSurfaceVariant, colors.surfaceContainerLow),
         (colors.onPrimaryContainer, colors.primaryContainer),
-        (colors.tertiary, colors.surface),
+        (colors.primary, colors.surfaceContainerLow),
+        (colors.tertiary, colors.surfaceContainerLow),
         (colors.onTertiaryContainer, colors.tertiaryContainer),
         (colors.onPrimary, colors.primary),
       ]) {

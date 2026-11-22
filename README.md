@@ -4,7 +4,7 @@
 
 这是独立的 Flutter Android 客户端预览，不需要检出或运行 React Native 工程。应用使用独立包名 `com.pimuse.pi_muse_flutter`，通过 HTTP/SSE 连接 Pi Muse 服务端。打开后填写服务端根地址及访问密钥，点击「连接」。访问密钥用于换取 Session Token。连接成功后，可从主聊天进入会话列表、创建或切换会话。
 
-聊天页使用 Material 顶栏：左侧切换会话，标题显示当前会话，右侧齿轮打开「服务器连接」。用户消息显示在右侧气泡；助手回复带有 Pi Muse 标记，以适合聊天阅读的字号呈现 Markdown，并保留原文换行。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
+聊天页使用 Material 顶栏：左侧切换会话，标题显示当前会话，右侧齿轮打开「服务器连接」。用户消息显示在右侧气泡；助手回复放在带细描边的气泡内，显示 Pi Muse 标记和 Markdown 正文，并保留原文换行。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
 
 ### 本地运行和检查
 
@@ -24,7 +24,7 @@ flutter run -d <android-device-id>
 
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, open the conversation picker from the main chat to create or switch sessions.
 
-The Material top app bar shows the conversation picker on the left, the current conversation title, and a settings button for **服务器连接** on the right. Your messages appear in right-aligned bubbles. Assistant replies have a Pi Muse label and use compact Markdown typography that preserves the original line breaks. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+The Material top app bar shows the conversation picker on the left, the current conversation title, and a settings button for **服务器连接** on the right. Your messages appear in right-aligned bubbles. Assistant replies appear in outlined bubbles with a Pi Muse label and Markdown that preserves the original line breaks. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
 
 ### Run and check locally
 
