@@ -294,12 +294,6 @@ class _ConnectionPageState extends State<ConnectionPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Image.asset(
-                      'assets/avatar/idle.png',
-                      height: 116,
-                      excludeFromSemantics: true,
-                    ),
-                    const SizedBox(height: 8),
                     Text(
                       'Pi Muse',
                       style: theme.textTheme.headlineMedium?.copyWith(

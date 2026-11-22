@@ -165,7 +165,6 @@ class _ChatPageState extends State<ChatPage> {
                 .firstOrNull
                 ?.title ??
             '会话';
-        final (status, pose) = _chat.presence;
         final compact = MediaQuery.viewInsetsOf(context).bottom > 0;
         final messages = conversation.messages
             .where(
@@ -176,97 +175,48 @@ class _ChatPageState extends State<ChatPage> {
         final running = conversation.submission?.running == true;
         final hasApproval =
             _chat.synchronized && _chat.activeApprovals.isNotEmpty;
+        final status = !_chat.synchronized
+            ? '正在连接…'
+            : hasApproval
+            ? null
+            : _chat.activityLabel;
         return Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              onPressed: _pickSession,
+              tooltip: '切换会话',
+              icon: const Icon(Icons.forum_outlined),
+            ),
+            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            centerTitle: false,
+            actions: [
+              IconButton(
+                onPressed: widget.onConnection,
+                tooltip: '服务器连接',
+                icon: const Icon(Icons.settings_outlined),
+              ),
+            ],
+          ),
           body: SafeArea(
+            top: false,
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 680),
                 child: Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: TextButton(
-                                style: TextButton.styleFrom(
-                                  foregroundColor: colors.onSurface,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                                onPressed: _pickSession,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.forum_outlined, size: 19),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                        title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const Icon(
-                                      Icons.keyboard_arrow_down,
-                                      size: 18,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Image.asset(
-                            'assets/avatar/$pose.png',
-                            width: compact ? 44 : 60,
-                            height: compact ? 44 : 60,
-                            gaplessPlayback: true,
-                            excludeFromSemantics: true,
-                          ),
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: IconButton(
-                                onPressed: widget.onConnection,
-                                tooltip: '服务器连接',
-                                icon: const Icon(Icons.link),
-                              ),
-                            ),
+                    if (hasApproval)
+                      MaterialBanner(
+                        content: Semantics(
+                          liveRegion: true,
+                          child: const Text('有文件修改待确认'),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: _openApproval,
+                            child: const Text('查看修改'),
                           ),
                         ],
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Semantics(
-                              liveRegion: true,
-                              child: Text(
-                                status,
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (hasApproval)
-                            TextButton(
-                              onPressed: _openApproval,
-                              child: const Text('查看修改'),
-                            ),
-                        ],
-                      ),
-                    ),
                     Expanded(
                       child: PageStorage(
                         bucket: _position,
@@ -335,6 +285,21 @@ class _ChatPageState extends State<ChatPage> {
                           error,
                           textAlign: TextAlign.center,
                           style: TextStyle(color: colors.error),
+                        ),
+                      )
+                    else if (status != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                       ),
                     Padding(

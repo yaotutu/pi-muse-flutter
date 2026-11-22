@@ -19,9 +19,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/avatar/idle.png
-    - assets/avatar/working.png
-    - assets/avatar/responding.png
-    - assets/avatar/waiting-approval.png
-    - assets/avatar/error.png

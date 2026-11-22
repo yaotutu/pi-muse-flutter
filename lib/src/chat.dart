@@ -145,33 +145,19 @@ class ChatController extends ChangeNotifier {
       active.submission == null &&
       !_runs.values.any((run) => run['sessionId'] == activeId);
 
-  (String, String) get presence {
-    if (expired) return ('连接已失效', 'error');
-    if (!synchronized) return ('正在连接', 'idle');
-    if (activeApprovals.isNotEmpty) {
-      return ('等你确认文件修改', 'waiting-approval');
-    }
-    final runs = _runs.values.where((run) => run['sessionId'] == activeId);
-    final run = runs.isEmpty ? null : runs.first;
-    if (active.submission?.stopping == true) return ('正在停止', 'working');
-    if (run != null) {
-      final phase = run['phase'];
-      final label = run['label'] as String?;
-      final pose = phase == 'responding' ? 'responding' : 'working';
-      return (label?.isNotEmpty == true ? label! : '正在处理', pose);
-    }
+  String? get activityLabel {
     final pending = active.submission;
-    if (pending?.running == true) {
-      return pending!.replies.isEmpty
-          ? ('正在处理', 'working')
-          : ('正在回复', 'responding');
+    if (pending?.stopping == true) return '正在停止';
+    if (!synchronized) return null;
+    final run = _runs.values
+        .where((run) => run['sessionId'] == activeId)
+        .firstOrNull;
+    if (run != null) {
+      final label = run['label'] as String?;
+      return label?.isNotEmpty == true ? label! : '正在处理';
     }
-    if (pending != null) return ('正在核对消息', 'working');
-    if (active.historyError != null || active.error != null) {
-      return ('需要你查看', 'error');
-    }
-    if (active.revision == null) return ('正在同步消息', 'idle');
-    return ('就绪', 'idle');
+    if (pending?.running != true) return null;
+    return pending!.replies.isEmpty ? '正在处理' : '正在回复';
   }
 
   void start() {

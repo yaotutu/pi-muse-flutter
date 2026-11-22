@@ -62,7 +62,7 @@ void main() {
         ),
       );
       await _tick();
-      expect(chat.presence.$1, '就绪');
+      expect(chat.activityLabel, isNull);
       chat.setDraft('Main message');
       final completed = chat.send();
       chat.select(topicId);
@@ -80,7 +80,7 @@ void main() {
       expect(chat.active.draft, 'Topic draft');
       expect(chat.active.messages, isEmpty);
       chat.select(mainSession);
-      expect(chat.presence.$1, '正在回复');
+      expect(chat.activityLabel, '正在回复');
       expect(chat.active.messages.last.text, 'Answer');
       final submitted = api.submitted.single;
       api.history[mainSession] = [
