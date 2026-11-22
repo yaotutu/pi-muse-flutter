@@ -11,44 +11,48 @@ void main() => runApp(const PiMuseApp());
 
 ThemeData museTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xff171824) : const Color(0xfff8f7fd);
+  final background = dark ? const Color(0xff111722) : const Color(0xfff7f9fb);
   final colors =
       ColorScheme.fromSeed(
-        seedColor: const Color(0xff6046bd),
+        seedColor: const Color(0xff1e40af),
         brightness: brightness,
       ).copyWith(
-        primary: dark ? const Color(0xffc8b8ff) : const Color(0xff6046bd),
-        onPrimary: dark ? const Color(0xff2d185f) : const Color(0xffffffff),
+        primary: dark ? const Color(0xffb8c4ff) : const Color(0xff00288e),
+        onPrimary: dark ? const Color(0xff082168) : const Color(0xffffffff),
         primaryContainer: dark
-            ? const Color(0xff392b62)
-            : const Color(0xffe9e0ff),
+            ? const Color(0xff25395b)
+            : const Color(0xffdbeafe),
         onPrimaryContainer: dark
-            ? const Color(0xfff0e9ff)
-            : const Color(0xff382658),
-        tertiary: dark ? const Color(0xff9cddd0) : const Color(0xff236962),
-        tertiaryContainer: dark
-            ? const Color(0xff21433f)
-            : const Color(0xffdbf1eb),
-        onTertiaryContainer: dark
-            ? const Color(0xffb5eee1)
-            : const Color(0xff1d5f57),
+            ? const Color(0xffe0ecff)
+            : const Color(0xff001b3d),
+        secondaryContainer: dark
+            ? const Color(0xff293b59)
+            : const Color(0xffd6e3ff),
+        onSecondaryContainer: dark
+            ? const Color(0xffd6e3ff)
+            : const Color(0xff001b3d),
+        tertiary: dark ? const Color(0xffa8b8ff) : const Color(0xff1e40af),
         surface: background,
-        onSurface: dark ? const Color(0xffece9fa) : const Color(0xff302b45),
+        onSurface: dark ? const Color(0xffecf0f8) : const Color(0xff191c1e),
         onSurfaceVariant: dark
-            ? const Color(0xffbdb6d2)
-            : const Color(0xff635c78),
+            ? const Color(0xffc0c7d6)
+            : const Color(0xff444653),
+        surfaceContainerLowest: dark
+            ? const Color(0xff1b2433)
+            : const Color(0xffffffff),
         surfaceContainerLow: dark
-            ? const Color(0xff202131)
-            : const Color(0xfffefcff),
+            ? const Color(0xff1e283a)
+            : const Color(0xfff2f4f6),
         surfaceContainer: dark
-            ? const Color(0xff242536)
-            : const Color(0xfff0ecf8),
+            ? const Color(0xff253042)
+            : const Color(0xffeceef0),
         surfaceContainerHigh: dark
-            ? const Color(0xff2d2d42)
-            : const Color(0xffece6f6),
+            ? const Color(0xff303c4f)
+            : const Color(0xffe6e8ea),
+        outline: dark ? const Color(0xffa1abbf) : const Color(0xff757684),
         outlineVariant: dark
-            ? const Color(0xff46435b)
-            : const Color(0xffe3daef),
+            ? const Color(0xff364157)
+            : const Color(0xffe2e8f0),
       );
   final inputBorder = OutlineInputBorder(
     borderRadius: BorderRadius.circular(18),

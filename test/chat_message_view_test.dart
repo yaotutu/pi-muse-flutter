@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' as flutter;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,7 +52,14 @@ void main() {
       ]) {
         expect(heading.fontSize! - style.p!.fontSize!, lessThanOrEqualTo(2));
       }
-      expect(style.p!.height, 1.5);
+      final colors = museTheme(Brightness.light).colorScheme;
+      expect(style.p!.height, 1.75);
+      expect(style.strong!.color, colors.primary);
+      expect(style.code!.backgroundColor, colors.surfaceContainerLow);
+      expect(
+        (style.blockquoteDecoration! as BoxDecoration).border,
+        Border(left: BorderSide(width: 4, color: colors.tertiary)),
+      );
       expect(reply.selectable, isTrue);
       expect(find.text('示例图片'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
@@ -120,6 +128,154 @@ void main() {
     expect(rendered[1].children!.whereType<md.Element>().single.tag, 'strong');
     expect(rendered[2].textContent, contains('## $longLine'));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('user bubble aligns right and checks only confirmed sends', (
+    tester,
+  ) async {
+    final message = ChatMessage(
+      'user-1',
+      'user',
+      '你好',
+      sentAt: DateTime(2026, 11, 23, 10, 15),
+    );
+    final theme = museTheme(Brightness.light);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: Column(
+            children: [
+              ChatMessageView(message: message, confirmed: false),
+              ChatMessageView(message: message),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final bubbles = find.byWidgetPredicate(
+      (widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is BoxDecoration &&
+          (widget.decoration as BoxDecoration).color ==
+              theme.colorScheme.primaryContainer,
+    );
+    expect(bubbles, findsNWidgets(2));
+    final box = tester.getRect(find.byType(ChatMessageView).first);
+    final bubble = tester.getRect(bubbles.first);
+    expect(bubble.right, box.right);
+    expect(bubble.width, lessThan(box.width));
+    expect(find.text('10:15'), findsNWidgets(2));
+    expect(find.byTooltip('已发送'), findsOneWidget);
+    expect(find.byIcon(Icons.done_all), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChatMessageView).first,
+        matching: find.byIcon(Icons.done_all),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'code panels use fence languages and preserve code on narrow screens',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const code =
+          'void main() {\n'
+          '  final description = "A line long enough to scroll horizontally in the reply card.";\n'
+          '\n'
+          '}';
+      const reply =
+          '```dart\n$code\n```\n\n'
+          '~~~json\n{"ok": true}\n~~~\n\n'
+          '```\nplain code\n```';
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: museTheme(Brightness.light),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: ChatMessageView(
+                message: ChatMessage('reply', 'assistant', reply),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('dart'), findsOneWidget);
+      expect(find.text('json'), findsOneWidget);
+      expect(find.text('text'), findsNothing);
+      expect(find.text(code), findsOneWidget);
+      final scroll = tester.state<flutter.ScrollableState>(
+        find.ancestor(
+          of: find.text(code),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is flutter.Scrollable &&
+                widget.axisDirection == AxisDirection.right,
+          ),
+        ),
+      );
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('assistant footer copies the visible source once confirmed', (
+    tester,
+  ) async {
+    const text = '**可见内容**\n下一行';
+    const source = '<think>内部推理</think>\n\n$text';
+    const streaming = ChatMessage('reply', 'assistant', source);
+    final saved = ChatMessage(
+      'reply',
+      'assistant',
+      source,
+      sentAt: DateTime(2026, 11, 23, 10, 16),
+    );
+    final clipboardCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboardCalls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(Brightness.light),
+        home: Scaffold(
+          body: Column(
+            children: [
+              const ChatMessageView(message: streaming, confirmed: false),
+              ChatMessageView(message: saved),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Pi Muse'), findsNothing);
+    expect(find.text('10:16'), findsOneWidget);
+    expect(find.byTooltip('复制'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChatMessageView).first,
+        matching: find.byTooltip('复制'),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byTooltip('复制'));
+    await tester.pumpAndSettle();
+    expect(clipboardCalls.single.arguments, {'text': text});
+    expect(find.text('已复制'), findsOneWidget);
   });
 
   test('chat text and action colors have readable contrast in both themes', () {

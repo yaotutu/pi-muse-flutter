@@ -37,6 +37,7 @@ void main() {
       20,
       (index) => ChatMessage('$index', 'user', 'Message $index'),
     );
+    chat.sessions = [...chat.sessions, const SessionEntry('topic', '随手记')];
     var openedConnection = false;
     await tester.pumpWidget(
       MaterialApp(
@@ -66,13 +67,72 @@ void main() {
       greaterThan(0),
     );
     expect(tester.getTopLeft(bar), barPosition);
-    await tester.tap(find.byTooltip('服务器连接'));
+    final title = find.descendant(of: bar, matching: find.text('主聊天'));
+    expect(tester.getCenter(title).dx, closeTo(180, 15));
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    expect(find.text('切换会话'), findsOneWidget);
+    expect(find.text('随手记'), findsOneWidget);
+    expect(find.text('新建会话'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    final bottom = find.byType(NavigationBar);
+    final destinations = tester.widget<NavigationBar>(bottom).destinations;
+    expect(
+      destinations.cast<NavigationDestination>().map((item) => item.label),
+      ['聊天', '待办', '新闻', '设置'],
+    );
+    expect((destinations[1] as NavigationDestination).enabled, isFalse);
+    expect((destinations[2] as NavigationDestination).enabled, isFalse);
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('服务器连接'));
+    await tester.pumpAndSettle();
     expect(openedConnection, isTrue);
     tester.view.viewInsets = const FakeViewPadding(bottom: 340);
     await tester.pumpAndSettle();
     expect(tester.getSize(bar).height, kToolbarHeight);
     expect(tester.getBottomRight(find.byType(TextField)).dy, lessThan(400));
+    expect(bottom, findsNothing);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('chat dates come from saved message metadata', (tester) async {
+    final address = Uri.parse('http://localhost');
+    final chat = ChatController(MuseApi(address), () => MuseApi(address));
+    addTearDown(chat.dispose);
+    chat.synchronized = true;
+    final localTime = DateTime(2025, 3, 4, 10, 15);
+    ChatMessage saved(String id, String role, String text, DateTime time) =>
+        ChatMessage.fromJson({
+          'id': id,
+          'role': role,
+          'content': text,
+          'metadata': {'createdAt': time.toUtc().toIso8601String()},
+        });
+    chat.active.history = [
+      saved('1', 'user', '问', localTime),
+      saved('2', 'assistant', '答', localTime.add(const Duration(minutes: 1))),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(Brightness.light),
+        home: ChatPage(chat: chat, onConnection: () {}),
+      ),
+    );
+    final localizations = MaterialLocalizations.of(
+      tester.element(find.byType(AppBar)),
+    );
+    final day = localizations.formatShortDate(localTime);
+    final date = find.text('$day 10:15');
+    expect(date, findsOneWidget);
+    expect(find.text('$day 10:16'), findsNothing);
+    expect(
+      tester.getTopLeft(date).dy - tester.getBottomLeft(find.byType(AppBar)).dy,
+      lessThan(24),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('approval banner opens the full preview at large text sizes', (

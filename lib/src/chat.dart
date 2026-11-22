@@ -14,13 +14,17 @@ class ChatMessage {
     this.role,
     this.text, {
     this.attachments = const [],
+    this.sentAt,
   });
 
   factory ChatMessage.fromJson(Json json) {
+    final metadata = json['metadata'];
+    final createdAt = metadata is Json ? metadata['createdAt'] : null;
     return ChatMessage(
       json['id'] as String,
       json['role'] as String,
       json['content'] as String? ?? '',
+      sentAt: createdAt is String ? DateTime.tryParse(createdAt) : null,
       attachments:
           (json['attachments'] as List?)
               ?.cast<Json>()
@@ -34,6 +38,7 @@ class ChatMessage {
   final String role;
   final String text;
   final List<ChatAttachment> attachments;
+  final DateTime? sentAt;
 }
 
 class SessionEntry {
@@ -498,6 +503,7 @@ class ChatController extends ChangeNotifier {
       'user',
       text,
       attachments: attachments,
+      sentAt: DateTime.now(),
     );
     final pending = Submission(_newId(), message, attachments);
     conversation.draft = '';

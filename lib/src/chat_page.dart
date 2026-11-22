@@ -50,10 +50,8 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildDrawer(BuildContext context) {
     final scaffold = Scaffold.of(context);
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     return Drawer(
-      semanticLabel: '会话导航',
+      semanticLabel: '侧边导航',
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -75,52 +73,102 @@ class _ChatPageState extends State<ChatPage> {
                       );
                     },
             ),
-            const Divider(indent: 16, endIndent: 16),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('会话', style: theme.textTheme.titleSmall),
-            ),
             ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('新建会话'),
-              enabled: _chat.synchronized,
-              onTap: _chat.synchronized
-                  ? () {
-                      scaffold.closeDrawer();
-                      showDialog<void>(
-                        context: context,
-                        builder: (_) => _NewSessionDialog(chat: _chat),
-                      );
-                    }
-                  : null,
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('设置'),
+              onTap: () {
+                scaffold.closeDrawer();
+                _openSettings();
+              },
             ),
-            if (_chat.directoryError case final String error)
-              ListTile(title: Text(error), onTap: _chat.refreshDirectory),
-            for (final session in _chat.sessions)
-              ListTile(
-                shape: const StadiumBorder(),
-                title: Text(
-                  session.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                leading: Icon(
-                  session.id == mainSession
-                      ? Icons.home_outlined
-                      : Icons.chat_bubble_outline,
-                ),
-                selected: session.id == _chat.activeId,
-                selectedColor: colors.onSecondaryContainer,
-                selectedTileColor: colors.secondaryContainer,
-                onTap: () {
-                  scaffold.closeDrawer();
-                  _chat.select(session.id);
-                },
-              ),
           ],
         ),
       ),
     );
+  }
+
+  void _openSettings() {
+    _focus.unfocus();
+    final onConnection = widget.onConnection;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('设置')),
+          body: SafeArea(
+            child: ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: const Text('服务器连接'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).pop();
+                onConnection();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickSession() async {
+    _focus.unfocus();
+    final choice = await showDialog<_SessionChoice>(
+      context: context,
+      builder: (context) => ListenableBuilder(
+        listenable: _chat,
+        builder: (context, _) {
+          final colors = Theme.of(context).colorScheme;
+          return AlertDialog(
+            title: const Text('切换会话'),
+            scrollable: true,
+            contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_chat.directoryError case final String error)
+                  ListTile(title: Text(error), onTap: _chat.refreshDirectory),
+                for (final session in _chat.sessions)
+                  ListTile(
+                    shape: const StadiumBorder(),
+                    title: Text(session.title),
+                    leading: Icon(
+                      session.id == mainSession
+                          ? Icons.home_outlined
+                          : Icons.chat_bubble_outline,
+                    ),
+                    selected: session.id == _chat.activeId,
+                    selectedColor: colors.onSecondaryContainer,
+                    selectedTileColor: colors.secondaryContainer,
+                    onTap: () =>
+                        Navigator.pop(context, _SelectSession(session.id)),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: _chat.synchronized
+                    ? () => Navigator.pop(context, const _CreateSession())
+                    : null,
+                icon: const Icon(Icons.add),
+                label: const Text('新建会话'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case _SelectSession(:final id):
+        _chat.select(id);
+      case _CreateSession():
+        await showDialog<void>(
+          context: context,
+          builder: (_) => _NewSessionDialog(chat: _chat),
+        );
+      case null:
+        break;
+    }
   }
 
   Future<void> _openApproval() async {
@@ -180,11 +228,8 @@ class _ChatPageState extends State<ChatPage> {
         final running = conversation.submission?.running == true;
         final hasApproval =
             _chat.synchronized && _chat.activeApprovals.isNotEmpty;
-        final status = !_chat.synchronized
-            ? '正在连接…'
-            : hasApproval
-            ? null
-            : _chat.activityLabel;
+        final pending = conversation.submission;
+        final activity = hasApproval ? null : _chat.activityLabel;
         return Scaffold(
           drawer: Builder(builder: _buildDrawer),
           onDrawerChanged: (open) {
@@ -194,8 +239,12 @@ class _ChatPageState extends State<ChatPage> {
           appBar: AppBar(
             backgroundColor: colors.surface,
             foregroundColor: colors.onSurface,
-            scrolledUnderElevation: 0,
-            titleSpacing: 4,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: colors.shadow.withValues(alpha: 0.12),
+            elevation: 1,
+            scrolledUnderElevation: 1,
+            titleSpacing: 0,
+            leadingWidth: 76,
             leading: Builder(
               builder: (context) => IconButton(
                 onPressed: () {
@@ -203,32 +252,25 @@ class _ChatPageState extends State<ChatPage> {
                   Scaffold.of(context).openDrawer();
                 },
                 tooltip: '打开导航菜单',
-                icon: const Icon(Icons.menu_rounded),
+                icon: const Icon(Icons.menu),
               ),
             ),
-            title: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-              ),
+            title: _ChatTitle(
+              title: title,
+              activity: activity,
+              onTap: _pickSession,
             ),
-            centerTitle: false,
-            actions: [
-              IconButton(
-                onPressed: widget.onConnection,
-                tooltip: '服务器连接',
-                icon: const Icon(Icons.settings_outlined),
-              ),
-            ],
+            centerTitle: true,
+            actions: const [SizedBox(width: 76)],
           ),
+          bottomNavigationBar: compact
+              ? null
+              : _ChatNavigationBar(onSettings: _openSettings),
           body: SafeArea(
             top: false,
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
+                constraints: const BoxConstraints(maxWidth: 768),
                 child: Column(
                   children: [
                     if (hasApproval)
@@ -264,23 +306,57 @@ class _ChatPageState extends State<ChatPage> {
                                   ),
                                 ),
                               )
-                            : ListView.builder(
-                                key: PageStorageKey(conversation.id),
-                                reverse: true,
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  12,
-                                  20,
-                                  12,
+                            : Align(
+                                alignment: Alignment.topCenter,
+                                child: ListView.separated(
+                                  key: PageStorageKey(conversation.id),
+                                  // 短对话从顶部开始，长对话仍以最新消息为滚动起点。
+                                  shrinkWrap: true,
+                                  reverse: true,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    24,
+                                  ),
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  itemCount: messages.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 24),
+                                  itemBuilder: (context, index) {
+                                    final position =
+                                        messages.length - index - 1;
+                                    final message = messages[position];
+                                    final sentAt = message.sentAt?.toLocal();
+                                    final previous = position == 0
+                                        ? null
+                                        : messages[position - 1].sentAt
+                                              ?.toLocal();
+                                    final confirmed =
+                                        pending == null ||
+                                        (message.id != pending.message.id &&
+                                            !pending.replies.containsKey(
+                                              message.id,
+                                            ));
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (sentAt != null &&
+                                            !DateUtils.isSameDay(
+                                              sentAt,
+                                              previous,
+                                            ))
+                                          _ChatDateLabel(sentAt),
+                                        ChatMessageView(
+                                          message: message,
+                                          confirmed: confirmed,
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
-                                keyboardDismissBehavior:
-                                    ScrollViewKeyboardDismissBehavior.onDrag,
-                                itemCount: messages.length,
-                                itemBuilder: (context, index) =>
-                                    ChatMessageView(
-                                      message:
-                                          messages[messages.length - index - 1],
-                                    ),
                               ),
                       ),
                     ),
@@ -316,13 +392,13 @@ class _ChatPageState extends State<ChatPage> {
                           style: TextStyle(color: colors.error),
                         ),
                       )
-                    else if (status != null)
+                    else if (!_chat.synchronized)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Semantics(
                           liveRegion: true,
                           child: Text(
-                            status,
+                            '正在连接…',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -361,23 +437,33 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: ListenableBuilder(
                         listenable: _focus,
-                        builder: (context, child) => Material(
-                          color: colors.surfaceContainerLow,
-                          shape: RoundedRectangleBorder(
+                        builder: (context, child) => DecoratedBox(
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(26),
-                            side: BorderSide(
-                              color: _focus.hasFocus
-                                  ? colors.primary
-                                  : colors.outlineVariant,
-                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: colors.tertiary.withValues(alpha: 0.07),
+                                blurRadius: 20,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          child: child,
+                          child: Material(
+                            color: colors.surfaceContainerLowest,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26),
+                              side: _focus.hasFocus
+                                  ? BorderSide(color: colors.primary)
+                                  : BorderSide.none,
+                            ),
+                            child: child,
+                          ),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.all(3),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
@@ -398,7 +484,11 @@ class _ChatPageState extends State<ChatPage> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Icon(Icons.attach_file),
+                                    : Icon(
+                                        Icons.attach_file,
+                                        size: 22,
+                                        color: colors.outline,
+                                      ),
                               ),
                               Expanded(
                                 child: TextField(
@@ -410,11 +500,13 @@ class _ChatPageState extends State<ChatPage> {
                                   maxLines: compact ? 3 : 5,
                                   textCapitalization:
                                       TextCapitalization.sentences,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontSize: 15,
+                                    letterSpacing: 0,
+                                  ),
                                   decoration: InputDecoration(
                                     hintText: '发消息给 Pi Muse',
-                                    hintStyle: TextStyle(
-                                      color: colors.onSurfaceVariant,
-                                    ),
+                                    hintStyle: TextStyle(color: colors.outline),
                                     filled: false,
                                     enabledBorder: InputBorder.none,
                                     focusedBorder: InputBorder.none,
@@ -427,34 +519,49 @@ class _ChatPageState extends State<ChatPage> {
                               const SizedBox(width: 6),
                               ValueListenableBuilder(
                                 valueListenable: _composer,
-                                builder: (context, value, _) =>
-                                    IconButton.filled(
-                                      key: ValueKey(running ? 'stop' : 'send'),
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(48),
-                                        disabledBackgroundColor:
-                                            colors.surfaceContainer,
-                                        disabledForegroundColor:
-                                            colors.onSurfaceVariant,
+                                builder: (context, value, _) {
+                                  final action = running
+                                      ? pending!.stopping
+                                            ? null
+                                            : _chat.stop
+                                      : _chat.canSend &&
+                                            (value.text.trim().isNotEmpty ||
+                                                conversation
+                                                    .draftAttachments
+                                                    .isNotEmpty)
+                                      ? _chat.send
+                                      : null;
+                                  return IconButton(
+                                    key: ValueKey(running ? 'stop' : 'send'),
+                                    tooltip: running ? '停止回复' : '发送',
+                                    onPressed: action,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 48,
+                                      height: 48,
+                                    ),
+                                    icon: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: action == null
+                                            ? colors.surfaceContainerHigh
+                                            : colors.tertiary,
                                       ),
-                                      tooltip: running ? '停止回复' : '发送',
-                                      onPressed: running
-                                          ? conversation.submission!.stopping
-                                                ? null
-                                                : _chat.stop
-                                          : _chat.canSend &&
-                                                (value.text.trim().isNotEmpty ||
-                                                    conversation
-                                                        .draftAttachments
-                                                        .isNotEmpty)
-                                          ? _chat.send
-                                          : null,
-                                      icon: Icon(
-                                        running
-                                            ? Icons.stop_rounded
-                                            : Icons.arrow_upward_rounded,
+                                      child: SizedBox.square(
+                                        dimension: 36,
+                                        child: Icon(
+                                          running
+                                              ? Icons.stop_rounded
+                                              : Icons.arrow_upward_rounded,
+                                          color: action == null
+                                              ? colors.outline
+                                              : colors.onTertiary,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -468,6 +575,225 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
       },
+    );
+  }
+}
+
+sealed class _SessionChoice {
+  const _SessionChoice();
+}
+
+class _SelectSession extends _SessionChoice {
+  const _SelectSession(this.id);
+
+  final String id;
+}
+
+class _CreateSession extends _SessionChoice {
+  const _CreateSession();
+}
+
+class _ChatTitle extends StatelessWidget {
+  const _ChatTitle({
+    required this.title,
+    required this.activity,
+    required this.onTap,
+  });
+
+  final String title;
+  final String? activity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(48, 48),
+        foregroundColor: colors.onSurface,
+      ),
+      child: Semantics(
+        hint: '切换会话',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.expand_more, size: 18),
+            if (activity case final String label) ...[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: label,
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: colors.secondaryContainer.withValues(alpha: 0.55),
+                    shape: StadiumBorder(
+                      side: BorderSide(color: colors.secondaryContainer),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.circle, size: 8, color: colors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          '工作中',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatDateLabel extends StatelessWidget {
+  const _ChatDateLabel(this.time);
+
+  final DateTime time;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final localizations = MaterialLocalizations.of(context);
+    final day = DateUtils.isSameDay(time, DateTime.now())
+        ? '今天'
+        : localizations.formatShortDate(time);
+    final clock = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(time),
+      alwaysUse24HourFormat: true,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 32),
+      child: Center(
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: Color.alphaBlend(
+              colors.surfaceContainerHigh.withValues(alpha: 0.7),
+              colors.surface,
+            ),
+            shape: const StadiumBorder(),
+            shadows: [
+              BoxShadow(
+                color: colors.shadow.withValues(alpha: 0.05),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text(
+              '$day $clock',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatNavigationBar extends StatelessWidget {
+  const _ChatNavigationBar({required this.onSettings});
+
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final bar = NavigationBarTheme(
+      data: NavigationBarThemeData(
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return theme.textTheme.labelMedium?.copyWith(
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: selected ? colors.primary : colors.onSurfaceVariant,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(WidgetState.selected)
+                ? colors.onSecondaryContainer
+                : colors.onSurfaceVariant,
+            size: 24,
+          ),
+        ),
+      ),
+      child: NavigationBar(
+        height: 64,
+        elevation: 0,
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: colors.secondaryContainer,
+        labelPadding: const EdgeInsets.only(top: 2),
+        onDestinationSelected: (index) {
+          if (index == 3) onSettings();
+        },
+        // 待办和新闻先按设计稿保留位置，迁移业务后再启用。
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.chat_bubble), label: '聊天'),
+          NavigationDestination(
+            icon: Icon(Icons.task_alt),
+            label: '待办',
+            enabled: false,
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.newspaper_outlined),
+            label: '新闻',
+            enabled: false,
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            label: '设置',
+          ),
+        ],
+      ),
+    );
+    return Material(
+      color: colors.surface,
+      elevation: 1,
+      shadowColor: colors.shadow.withValues(alpha: 0.13),
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 768),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: bar,
+          ),
+        ),
+      ),
     );
   }
 }
