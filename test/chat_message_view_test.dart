@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' as flutter;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -57,6 +58,38 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('assistant line breaks survive rendering beside bold text', (
+    tester,
+  ) async {
+    const title = '09:00–10:45 浙江省博物馆孤山馆区';
+    const description = '主馆是「中国通史」。';
+    const reply =
+        '**$title**\n$description\n\n'
+        '**11:45–13:00 午饭**\n楼外楼就在公园边。';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(Brightness.light),
+        home: const Scaffold(
+          body: ChatMessageView(
+            message: ChatMessage('reply', 'assistant', reply),
+          ),
+        ),
+      ),
+    );
+    final markdown = find.byType(MarkdownBody);
+    final blocks = tester
+        .widgetList<flutter.EditableText>(
+          find.descendant(
+            of: markdown,
+            matching: find.byType(flutter.EditableText),
+          ),
+        )
+        .map((block) => block.controller.text);
+    expect(blocks, contains('$title\n$description'));
+    expect(blocks, contains('11:45–13:00 午饭\n楼外楼就在公园边。'));
+    expect(tester.widget<MarkdownBody>(markdown).data, reply);
+  });
 
   testWidgets('paragraph-sized headings keep their inline meaning', (
     tester,

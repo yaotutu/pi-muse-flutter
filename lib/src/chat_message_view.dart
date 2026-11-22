@@ -93,6 +93,8 @@ class ChatMessageView extends StatelessWidget {
           MarkdownBody(
             data: text,
             selectable: true,
+            // 保留回复原文的单换行，例如行程条目的时间地点与下一行的说明。
+            softLineBreak: true,
             blockSyntaxes: const [_ChatHeadingSyntax()],
             imageBuilder: (_, _, alt) => Text(alt ?? ''),
             styleSheet: _replyStyles(body, colors),
