@@ -4,23 +4,36 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'chat_attachment.dart';
 
 const mainSession = 'main';
 
 class ChatMessage {
-  const ChatMessage(this.id, this.role, this.text);
+  const ChatMessage(
+    this.id,
+    this.role,
+    this.text, {
+    this.attachments = const [],
+  });
 
   factory ChatMessage.fromJson(Json json) {
     return ChatMessage(
       json['id'] as String,
       json['role'] as String,
       json['content'] as String? ?? '',
+      attachments:
+          (json['attachments'] as List?)
+              ?.cast<Json>()
+              .map(ChatAttachment.fromJson)
+              .toList(growable: false) ??
+          const [],
     );
   }
 
   final String id;
   final String role;
   final String text;
+  final List<ChatAttachment> attachments;
 }
 
 class SessionEntry {
@@ -59,11 +72,13 @@ class Approval {
 }
 
 class Submission {
-  Submission(this.runId, this.message);
+  Submission(this.runId, this.message, this.attachments);
 
   final String runId;
   final ChatMessage message;
+  final List<DraftAttachment> attachments;
   final replies = <String, String>{};
+  String? rejection;
   bool running = true;
   bool stopping = false;
   bool settled = false;
@@ -82,7 +97,12 @@ class Conversation {
 
   final String id;
   String draft = '';
+  List<DraftAttachment> draftAttachments = const [];
+  String? attachmentError;
   String? revision;
+
+  int get draftAttachmentBytes =>
+      draftAttachments.fold(0, (bytes, attachment) => bytes + attachment.size);
   String? binding;
   List<ChatMessage> history = const [];
   Submission? submission;
@@ -100,10 +120,16 @@ class Conversation {
 }
 
 class ChatController extends ChangeNotifier {
-  ChatController(this.api, this.openEvents);
+  ChatController(
+    this.api,
+    this.openEvents, {
+    ChatAttachmentPicker attachmentPicker = pickAndroidChatAttachments,
+  }) : _attachmentPicker = attachmentPicker;
 
   final MuseApi api;
   final MuseApi Function() openEvents;
+  final ChatAttachmentPicker _attachmentPicker;
+  Conversation? _attachmentPickerOwner;
   final conversations = <String, Conversation>{
     mainSession: Conversation(mainSession),
   };
@@ -134,7 +160,19 @@ class ChatController extends ChangeNotifier {
       .where((approval) => approval.sessionId == activeId)
       .toList();
 
+  bool get pickingAttachments => identical(_attachmentPickerOwner, active);
+
+  bool get canPickAttachments =>
+      _attachmentPickerOwner == null &&
+      !expired &&
+      !active.missing &&
+      active.binding != null &&
+      active.submission == null &&
+      active.draftAttachments.length < maxChatAttachments &&
+      active.draftAttachmentBytes < maxChatAttachmentBytes;
+
   bool get canSend =>
+      !pickingAttachments &&
       synchronized &&
       !expired &&
       !active.missing &&
@@ -351,12 +389,15 @@ class ChatController extends ChangeNotifier {
             conversation.submission = null;
           } else if (pending.settled) {
             conversation.draft = pending.message.text;
-            conversation.error = '服务器未保存这条消息，内容已放回输入框';
+            conversation.draftAttachments = pending.attachments;
+            conversation.error = pending.rejection ?? '服务器未保存这条消息，草稿已恢复';
             conversation.submission = null;
           }
         }
         if (bindingChanged) {
           conversation.draft = '';
+          conversation.draftAttachments = const [];
+          conversation.attachmentError = null;
           conversation.error = null;
         }
         conversation.binding = binding;
@@ -407,13 +448,61 @@ class ChatController extends ChangeNotifier {
 
   void setDraft(String draft) => active.draft = draft;
 
+  Future<void> chooseAttachments() async {
+    if (!canPickAttachments) return;
+    final conversation = active;
+    final binding = conversation.binding;
+    _attachmentPickerOwner = conversation;
+    conversation.attachmentError = null;
+    _changed();
+    bool stillCurrent() =>
+        !_disposed && !expired && conversation.binding == binding;
+    try {
+      final picked = await _attachmentPicker(
+        maxFiles: maxChatAttachments - conversation.draftAttachments.length,
+        maxBytes: maxChatAttachmentBytes - conversation.draftAttachmentBytes,
+      );
+      if (stillCurrent() && picked.isNotEmpty) {
+        conversation.draftAttachments = appendChatAttachments(
+          conversation.draftAttachments,
+          picked,
+          _newId,
+        );
+      }
+    } on AttachmentException catch (error) {
+      if (stillCurrent()) conversation.attachmentError = error.message;
+    } catch (_) {
+      if (stillCurrent()) conversation.attachmentError = '无法打开或读取选中的文件';
+    } finally {
+      _attachmentPickerOwner = null;
+      _changed();
+    }
+  }
+
+  void removeDraftAttachment(String id) {
+    if (pickingAttachments || active.submission != null) return;
+    active.draftAttachments = List.unmodifiable(
+      active.draftAttachments.where((attachment) => attachment.id != id),
+    );
+    active.attachmentError = null;
+    _changed();
+  }
+
   Future<void> send() async {
     final conversation = active;
     final text = conversation.draft;
-    if (!canSend || text.trim().isEmpty) return;
-    final message = ChatMessage(_newId(), 'user', text);
-    final pending = Submission(_newId(), message);
+    final attachments = conversation.draftAttachments;
+    if (!canSend || (text.trim().isEmpty && attachments.isEmpty)) return;
+    final message = ChatMessage(
+      _newId(),
+      'user',
+      text,
+      attachments: attachments,
+    );
+    final pending = Submission(_newId(), message, attachments);
     conversation.draft = '';
+    conversation.draftAttachments = const [];
+    conversation.attachmentError = null;
     conversation.error = null;
     conversation.submission = pending;
     _changed();
@@ -423,7 +512,14 @@ class ChatController extends ChangeNotifier {
         'sessionId': conversation.id,
         'runId': pending.runId,
         'expectedRevision': conversation.revision,
-        'message': {'id': message.id, 'content': text},
+        'message': {
+          'id': message.id,
+          'content': text,
+          if (attachments.isNotEmpty)
+            'attachments': attachments
+                .map((attachment) => attachment.toRequest())
+                .toList(),
+        },
       })) {
         if (_disposed) return;
         final data = frame.data;
@@ -449,6 +545,15 @@ class ChatController extends ChangeNotifier {
       if (!finished) conversation.error = '回复连接中断，正在核对发送结果';
     } catch (error) {
       _checkAuth(error);
+      // 只把服务端明确的前置拒绝视为终态，仍先回读历史再恢复草稿。
+      pending.rejection = switch (error) {
+        ApiException(status: 413, code: 'REQUEST_TOO_LARGE') =>
+          '消息超过服务端大小限制，草稿已恢复',
+        ApiException(status: 400, code: 'INVALID_INPUT') => '服务端拒绝了消息内容，草稿已恢复',
+        ApiException(status: 409, code: 'HISTORY_CONFLICT') => '会话记录已更新，草稿已恢复',
+        _ => null,
+      };
+      pending.settled = pending.settled || pending.rejection != null;
       conversation.error = '消息发送遇到问题，正在核对服务器记录';
     } finally {
       if (!_disposed) {

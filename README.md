@@ -6,6 +6,12 @@
 
 聊天页使用 Material 顶栏：左侧切换会话，标题显示当前会话，右侧齿轮打开「服务器连接」。用户消息显示在右侧气泡；助手回复放在带细描边的气泡内，显示 Pi Muse 标记和 Markdown 正文，并保留原文换行。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
 
+### 发送附件
+
+点输入框左侧的「添加附件」，在 Android 系统选择器中选取图片或文本。附件会先列在输入框上方，可以移除，再与文字一起发送，也可以单独发送。每条消息最多 4 项、合计 8 MiB，其中文本合计最多 100,000 字节。支持 PNG、JPEG、GIF、WebP 和有效的 UTF-8 文本。
+
+发送后，附件随用户消息显示。点图片可打开预览，文本附件显示名称和大小。图片理解取决于当前服务端配置的模型。发送结果不明时，先点「核对发送结果」。确认消息未保存时，原附件和文字会恢复到当前会话的草稿。
+
 ### 本地运行和检查
 
 需要 Flutter 3.50.1、JDK 17 或兼容版本、Android SDK 36 和 Android 模拟器。在本目录执行：
@@ -25,6 +31,12 @@ flutter run -d <android-device-id>
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, open the conversation picker from the main chat to create or switch sessions.
 
 The Material top app bar shows the conversation picker on the left, the current conversation title, and a settings button for **服务器连接** on the right. Your messages appear in right-aligned bubbles. Assistant replies appear in outlined bubbles with a Pi Muse label and Markdown that preserves the original line breaks. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+
+### Send attachments
+
+Tap **添加附件** on the left of the composer and choose images or text files in the Android file picker. Review or remove the files above the composer, then send them with or without a message. Each message can include up to four files and 8 MiB in total, with a shared limit of 100,000 bytes for text. Supported formats are PNG, JPEG, GIF, WebP, and valid UTF-8 text.
+
+Attachments appear with the user message after sending. Tap an image to preview it. Text attachments show their name and size. Image understanding depends on the model configured on the server. If delivery is uncertain, tap **核对发送结果**. Once the app confirms the message was not saved, it restores the original files and text to that conversation's draft.
 
 ### Run and check locally
 

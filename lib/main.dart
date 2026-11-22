@@ -182,6 +182,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
               final hasDraft = chat.conversations.values.any(
                 (conversation) =>
                     conversation.draft.isNotEmpty ||
+                    conversation.draftAttachments.isNotEmpty ||
                     conversation.submission != null,
               );
               if (hasRun || hasDraft) {

@@ -3,6 +3,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
 
 import 'chat.dart';
+import 'chat_attachment_view.dart';
 import 'visible_text.dart';
 
 class ChatMessageView extends StatelessWidget {
@@ -16,7 +17,9 @@ class ChatMessageView extends StatelessWidget {
     final colors = theme.colorScheme;
     final user = message.role == 'user';
     final text = user ? message.text : visibleAssistantText(message.text);
-    if (text.trim().isEmpty) return const SizedBox.shrink();
+    if (text.trim().isEmpty && message.attachments.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     final body = theme.textTheme.bodyLarge!.copyWith(
       color: colors.onSurface,
@@ -45,9 +48,27 @@ class ChatMessageView extends StatelessWidget {
                   horizontal: 15,
                   vertical: 10,
                 ),
-                child: SelectableText(
-                  text,
-                  style: body.copyWith(color: colors.onPrimaryContainer),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (text.trim().isNotEmpty)
+                      SelectableText(
+                        text,
+                        style: body.copyWith(color: colors.onPrimaryContainer),
+                      ),
+                    if (text.trim().isNotEmpty &&
+                        message.attachments.isNotEmpty)
+                      const SizedBox(height: 8),
+                    for (final (index, attachment)
+                        in message.attachments.indexed) ...[
+                      if (index > 0) const SizedBox(height: 6),
+                      ChatAttachmentTile(
+                        key: ValueKey(attachment.id),
+                        attachment: attachment,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

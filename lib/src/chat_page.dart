@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'chat.dart';
+import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
 
 class ChatPage extends StatefulWidget {
@@ -287,7 +288,8 @@ class _ChatPageState extends State<ChatPage> {
                         onPressed: () => _chat.refresh(conversation),
                         child: Text(error),
                       )
-                    else if (conversation.error case final String error)
+                    else if (conversation.attachmentError ?? conversation.error
+                        case final String error)
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20,
@@ -314,6 +316,35 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                         ),
                       ),
+                    if (conversation.draftAttachments.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                        child: SingleChildScrollView(
+                          key: PageStorageKey('attachments-${conversation.id}'),
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final attachment
+                                  in conversation.draftAttachments)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: SizedBox(
+                                    width: 210,
+                                    child: ChatAttachmentTile(
+                                      key: ValueKey(attachment.id),
+                                      attachment: attachment,
+                                      onRemove: _chat.pickingAttachments
+                                          ? null
+                                          : () => _chat.removeDraftAttachment(
+                                              attachment.id,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
                       child: ListenableBuilder(
@@ -331,10 +362,29 @@ class _ChatPageState extends State<ChatPage> {
                           child: child,
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 3, 3, 3),
+                          padding: const EdgeInsets.all(3),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
+                              IconButton(
+                                tooltip: _chat.pickingAttachments
+                                    ? '正在读取附件'
+                                    : '添加附件',
+                                onPressed: _chat.canPickAttachments
+                                    ? () {
+                                        _focus.unfocus();
+                                        _chat.chooseAttachments();
+                                      }
+                                    : null,
+                                icon: _chat.pickingAttachments
+                                    ? const SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.attach_file),
+                              ),
                               Expanded(
                                 child: TextField(
                                   controller: _composer,
@@ -378,7 +428,10 @@ class _ChatPageState extends State<ChatPage> {
                                                 ? null
                                                 : _chat.stop
                                           : _chat.canSend &&
-                                                value.text.trim().isNotEmpty
+                                                (value.text.trim().isNotEmpty ||
+                                                    conversation
+                                                        .draftAttachments
+                                                        .isNotEmpty)
                                           ? _chat.send
                                           : null,
                                       icon: Icon(
