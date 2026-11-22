@@ -4,7 +4,7 @@
 
 Flutter Android 预览版使用独立的应用包名。打开后填写 Pi Muse 服务端根地址及访问密钥，点击「连接」。访问密钥用于换取 Session Token。连接成功后，可从主聊天进入会话列表、创建或切换会话。
 
-顶部企鹅显示当前会话状态。回复实时出现在对话里，输入框旁的停止按钮结束本机发起的本轮回复。等待文件审批时，点击「查看修改」，核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。服务器连接入口在右上角。
+顶部居中的企鹅显示当前会话状态，键盘弹起时会缩小。回复实时出现在对话里，输入框旁的停止按钮结束本机发起的本轮回复。等待文件审批时，点击状态旁的「查看修改」，核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。服务器连接入口在右上角。
 
 ### 本地运行和检查
 
@@ -23,7 +23,7 @@ flutter run -d <android-device-id>
 
 The Flutter Android preview uses a separate application ID. Enter the Pi Muse server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, open the conversation picker from the main chat to create or switch sessions.
 
-The penguin at the top shows the active conversation’s status. Replies stream into the conversation. The stop button beside the composer ends the current reply started on this device. When a file change needs approval, open **查看修改** to read the full before and after text before approving or denying it. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again. Server connection settings are at the upper right.
+The centered penguin at the top shows the active conversation’s status and gets smaller while the keyboard is open. Replies stream into the conversation. The stop button beside the composer ends the current reply started on this device. When a file change needs approval, tap **查看修改** beside the status to read the full before and after text before approving or denying it. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again. Server connection settings are at the upper right.
 
 ### Run and check locally
 

@@ -184,13 +184,19 @@ class _ChatPageState extends State<ChatPage> {
                 child: Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: colors.onSurface,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                ),
                                 onPressed: _pickSession,
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -213,27 +219,32 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                             ),
                           ),
-                          IconButton(
-                            onPressed: widget.onConnection,
-                            tooltip: '服务器连接',
-                            icon: const Icon(Icons.link),
+                          Image.asset(
+                            'assets/avatar/$pose.png',
+                            width: compact ? 44 : 60,
+                            height: compact ? 44 : 60,
+                            gaplessPlayback: true,
+                            excludeFromSemantics: true,
+                          ),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: IconButton(
+                                onPressed: widget.onConnection,
+                                tooltip: '服务器连接',
+                                icon: const Icon(Icons.link),
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
                     Padding(
-                      padding: EdgeInsets.only(bottom: compact ? 8 : 14),
-                      child: Column(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Image.asset(
-                            'assets/avatar/$pose.png',
-                            width: compact ? 62 : 98,
-                            height: compact ? 62 : 98,
-                            gaplessPlayback: true,
-                            excludeFromSemantics: true,
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                          Flexible(
                             child: Semantics(
                               liveRegion: true,
                               child: Text(
@@ -242,8 +253,8 @@ class _ChatPageState extends State<ChatPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.labelLarge?.copyWith(
-                                  color: colors.primary,
-                                  fontWeight: FontWeight.w700,
+                                  color: colors.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -256,7 +267,6 @@ class _ChatPageState extends State<ChatPage> {
                         ],
                       ),
                     ),
-                    const Divider(height: 1, indent: 20, endIndent: 20),
                     Expanded(
                       child: PageStorage(
                         bucket: _position,
@@ -282,7 +292,7 @@ class _ChatPageState extends State<ChatPage> {
                                 reverse: true,
                                 padding: const EdgeInsets.fromLTRB(
                                   20,
-                                  20,
+                                  12,
                                   20,
                                   12,
                                 ),

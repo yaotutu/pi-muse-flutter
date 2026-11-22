@@ -11,12 +11,41 @@ void main() => runApp(const PiMuseApp());
 
 ThemeData museTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xff171c1c) : const Color(0xfff8f6f0);
-  final ink = dark ? const Color(0xffe8eeea) : const Color(0xff202a28);
-  final colors = ColorScheme.fromSeed(
-    seedColor: const Color(0xff28796c),
-    brightness: brightness,
-  ).copyWith(surface: background, onSurface: ink);
+  final background = dark ? const Color(0xff15181e) : const Color(0xffffffff);
+  final ink = dark ? const Color(0xffe7ebf2) : const Color(0xff232932);
+  final colors =
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xff244e79),
+        brightness: brightness,
+      ).copyWith(
+        primary: dark ? const Color(0xffaccdf5) : const Color(0xff244e79),
+        onPrimary: dark ? const Color(0xff102b47) : const Color(0xffffffff),
+        primaryContainer: dark
+            ? const Color(0xff253346)
+            : const Color(0xffedf2f7),
+        onPrimaryContainer: ink,
+        surface: background,
+        onSurface: ink,
+        onSurfaceVariant: dark
+            ? const Color(0xffacb6c5)
+            : const Color(0xff556171),
+        surfaceContainerLow: dark
+            ? const Color(0xff1b2029)
+            : const Color(0xfff8f9fb),
+        surfaceContainer: dark
+            ? const Color(0xff212630)
+            : const Color(0xfff2f4f7),
+        surfaceContainerHigh: dark
+            ? const Color(0xff272e38)
+            : const Color(0xffe9edf2),
+        outlineVariant: dark
+            ? const Color(0xff424d5c)
+            : const Color(0xffd6dce5),
+      );
+  final inputBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(18),
+    borderSide: BorderSide(color: colors.outlineVariant),
+  );
   return ThemeData(
     colorScheme: colors,
     scaffoldBackgroundColor: background,
@@ -24,9 +53,10 @@ ThemeData museTheme(Brightness brightness) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surfaceContainerLow,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide(color: colors.outlineVariant),
+      border: inputBorder,
+      enabledBorder: inputBorder,
+      focusedBorder: inputBorder.copyWith(
+        borderSide: BorderSide(color: colors.primary, width: 1.5),
       ),
     ),
     textTheme: const TextTheme(
