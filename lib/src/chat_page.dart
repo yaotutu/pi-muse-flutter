@@ -1,9 +1,8 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'chat.dart';
-import 'visible_text.dart';
+import 'chat_message_view.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, required this.chat, required this.onConnection});
@@ -182,12 +181,24 @@ class _ChatPageState extends State<ChatPage> {
             : _chat.activityLabel;
         return Scaffold(
           appBar: AppBar(
+            backgroundColor: colors.surface,
+            foregroundColor: colors.onSurface,
+            scrolledUnderElevation: 0,
+            titleSpacing: 4,
             leading: IconButton(
               onPressed: _pickSession,
               tooltip: '切换会话',
-              icon: const Icon(Icons.forum_outlined),
+              icon: const Icon(Icons.menu_rounded),
             ),
-            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             centerTitle: false,
             actions: [
               IconButton(
@@ -249,10 +260,11 @@ class _ChatPageState extends State<ChatPage> {
                                 keyboardDismissBehavior:
                                     ScrollViewKeyboardDismissBehavior.onDrag,
                                 itemCount: messages.length,
-                                itemBuilder: (context, index) => _MessageCell(
-                                  message:
-                                      messages[messages.length - index - 1],
-                                ),
+                                itemBuilder: (context, index) =>
+                                    ChatMessageView(
+                                      message:
+                                          messages[messages.length - index - 1],
+                                    ),
                               ),
                       ),
                     ),
@@ -304,55 +316,81 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _composer,
-                              focusNode: _focus,
-                              readOnly: conversation.submission != null,
-                              onChanged: _chat.setDraft,
-                              minLines: 1,
-                              maxLines: compact ? 3 : 5,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                hintText: '发消息给 Pi Muse',
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 13,
-                                ),
-                              ),
+                      child: ListenableBuilder(
+                        listenable: _focus,
+                        builder: (context, child) => Material(
+                          color: colors.surfaceContainerLow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(26),
+                            side: BorderSide(
+                              color: _focus.hasFocus
+                                  ? colors.primary
+                                  : colors.outlineVariant,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          ValueListenableBuilder(
-                            valueListenable: _composer,
-                            builder: (context, value, _) => IconButton.filled(
-                              key: ValueKey(running ? 'stop' : 'send'),
-                              style: IconButton.styleFrom(
-                                minimumSize: const Size.square(50),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                          child: child,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 3, 3, 3),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _composer,
+                                  focusNode: _focus,
+                                  readOnly: conversation.submission != null,
+                                  onChanged: _chat.setDraft,
+                                  minLines: 1,
+                                  maxLines: compact ? 3 : 5,
+                                  textCapitalization:
+                                      TextCapitalization.sentences,
+                                  decoration: InputDecoration(
+                                    hintText: '发消息给 Pi Muse',
+                                    hintStyle: TextStyle(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                    filled: false,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              tooltip: running ? '停止回复' : '发送',
-                              onPressed: running
-                                  ? conversation.submission!.stopping
-                                        ? null
-                                        : _chat.stop
-                                  : _chat.canSend &&
-                                        value.text.trim().isNotEmpty
-                                  ? _chat.send
-                                  : null,
-                              icon: Icon(
-                                running
-                                    ? Icons.stop_rounded
-                                    : Icons.arrow_upward_rounded,
+                              const SizedBox(width: 6),
+                              ValueListenableBuilder(
+                                valueListenable: _composer,
+                                builder: (context, value, _) =>
+                                    IconButton.filled(
+                                      key: ValueKey(running ? 'stop' : 'send'),
+                                      style: IconButton.styleFrom(
+                                        minimumSize: const Size.square(48),
+                                        disabledBackgroundColor:
+                                            colors.surfaceContainer,
+                                        disabledForegroundColor:
+                                            colors.onSurfaceVariant,
+                                      ),
+                                      tooltip: running ? '停止回复' : '发送',
+                                      onPressed: running
+                                          ? conversation.submission!.stopping
+                                                ? null
+                                                : _chat.stop
+                                          : _chat.canSend &&
+                                                value.text.trim().isNotEmpty
+                                          ? _chat.send
+                                          : null,
+                                      icon: Icon(
+                                        running
+                                            ? Icons.stop_rounded
+                                            : Icons.arrow_upward_rounded,
+                                      ),
+                                    ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
@@ -362,87 +400,6 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
       },
-    );
-  }
-}
-
-class _MessageCell extends StatelessWidget {
-  const _MessageCell({required this.message});
-
-  final ChatMessage message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final user = message.role == 'user';
-    final body = user ? message.text : visibleAssistantText(message.text);
-    if (body.trim().isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Align(
-        alignment: user ? Alignment.centerRight : Alignment.centerLeft,
-        child: FractionallySizedBox(
-          widthFactor: user ? 0.86 : 1,
-          alignment: user ? Alignment.centerRight : Alignment.centerLeft,
-          child: Column(
-            crossAxisAlignment: user
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              if (!user)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    'Pi Muse',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              if (user)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 15,
-                      vertical: 10,
-                    ),
-                    child: SelectableText(
-                      body,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                )
-              else
-                MarkdownBody(
-                  data: body,
-                  selectable: true,
-                  imageBuilder: (_, _, alt) => Text(alt ?? ''),
-                  styleSheet: MarkdownStyleSheet(
-                    p: theme.textTheme.bodyLarge,
-                    h1: theme.textTheme.headlineSmall,
-                    h2: theme.textTheme.titleLarge,
-                    h3: theme.textTheme.titleMedium,
-                    code: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace',
-                      backgroundColor: theme.colorScheme.surfaceContainer,
-                    ),
-                    codeblockDecoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
