@@ -178,6 +178,12 @@ class MuseApi {
   Future<Json> post(String path, Json body) =>
       _request('POST', path, body: body);
 
+  Future<Json> patch(String path, Json body) =>
+      _request('PATCH', path, body: body);
+
+  Future<Json> delete(String path, Json body) =>
+      _request('DELETE', path, body: body);
+
   Stream<SseFrame> events() => _stream('GET', '/api/events', workspace: true);
 
   Stream<SseFrame> run(Json body) =>

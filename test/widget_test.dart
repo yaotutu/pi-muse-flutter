@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pi_muse_flutter/src/api.dart';
@@ -6,7 +8,166 @@ import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
 import 'package:pi_muse_flutter/src/visible_text.dart';
 
+class _SessionApi extends MuseApi {
+  _SessionApi() : super(Uri.parse('http://localhost'));
+
+  String? topicTitle = '计划';
+  int previews = 0;
+  final deletes = <Json>[];
+  final finalDelete = Completer<Json>();
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/sessions') {
+      return {
+        'sessions': [
+          {'id': mainSession, 'title': '默认会话'},
+          if (topicTitle != null) {'id': 'topic', 'title': topicTitle},
+        ],
+      };
+    }
+    if (path == '/api/sessions/topic/schedules') {
+      final revision = ++previews;
+      return {
+        'scheduleRevision': revision.toRadixString(16).padLeft(64, '0'),
+        'jobs': [
+          {'id': 'job', 'title': '任务 $revision'},
+        ],
+        'monitors': [
+          {'id': 'monitor', 'title': '更新监控'},
+        ],
+      };
+    }
+    return {
+      'sessionId': query?['sessionId'],
+      'piSessionId': 'binding',
+      'revision': 'empty',
+      'messages': [],
+    };
+  }
+
+  @override
+  Future<Json> patch(String path, Json body) async {
+    expect(path, '/api/sessions/topic');
+    topicTitle = body['title'] as String;
+    return {
+      'session': {'id': 'topic', 'title': topicTitle},
+    };
+  }
+
+  @override
+  Future<Json> delete(String path, Json body) async {
+    expect(path, '/api/sessions/topic');
+    deletes.add(body);
+    if (deletes.length == 1) {
+      throw const ApiException(409, code: 'SESSION_SCHEDULES_CHANGED');
+    }
+    final receipt = await finalDelete.future;
+    topicTitle = null;
+    return receipt;
+  }
+}
+
 void main() {
+  testWidgets(
+    'manage topics from the picker and re-confirm a changed task list',
+    (tester) async {
+      final api = _SessionApi();
+      final chat = ChatController(api, () => api)..synchronized = true;
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      await chat.refreshDirectory();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(
+            chat: chat,
+            appearance: appearance,
+            onConnection: () {},
+          ),
+        ),
+      );
+      await tester.tap(find.text('默认会话'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('更多操作：默认会话'), findsNothing);
+      Future<void> openAction(String title, String action) async {
+        final menu = find.byWidgetPredicate(
+          (widget) =>
+              widget is PopupMenuButton && widget.tooltip == '更多操作：$title',
+        );
+        expect(menu, findsOneWidget);
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(action));
+        await tester.pumpAndSettle();
+      }
+
+      await openAction('计划', '重命名');
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog).last,
+          matching: find.byType(TextField),
+        ),
+        '新计划',
+      );
+      await tester.pump();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('切换会话'), findsOneWidget);
+      expect(find.text('新计划'), findsOneWidget);
+      await openAction('新计划', '删除');
+      expect(find.text('定时任务：任务 1'), findsOneWidget);
+      expect(find.text('网页监控：更新监控'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(api.deletes, isEmpty);
+      await openAction('新计划', '删除');
+      expect(find.text('定时任务：任务 2'), findsOneWidget);
+      await tester.tap(find.text('保留并转到默认会话'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '删除会话'));
+      await tester.pumpAndSettle();
+      expect(find.text('任务或监控已变化，请核对新清单后再确认。'), findsOneWidget);
+      expect(find.text('定时任务：任务 3'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '删除会话'))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.text('保留并转到默认会话'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '删除会话'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '继续删除'))
+            .onPressed,
+        isNull,
+      );
+      api.finalDelete.complete({
+        'ok': true,
+        'removed': {'sessions': 1},
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('切换会话'), findsOneWidget);
+      expect(find.text('新计划'), findsNothing);
+      expect(chat.activeId, mainSession);
+      expect(api.deletes, [
+        {
+          'scheduleRevision': '2'.padLeft(64, '0'),
+          'scheduleDisposition': 'move-to-main',
+        },
+        {
+          'scheduleRevision': '3'.padLeft(64, '0'),
+          'scheduleDisposition': 'move-to-main',
+        },
+      ]);
+    },
+  );
   test('assistant projection hides incomplete and nested thinking blocks', () {
     expect(visibleAssistantText('Hello <thi'), 'Hello ');
     expect(visibleAssistantText('<think>private'), '');

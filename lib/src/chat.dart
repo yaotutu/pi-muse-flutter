@@ -51,6 +51,41 @@ class SessionEntry {
   final String title;
 }
 
+enum SessionScheduleDisposition {
+  delete('delete'),
+  moveToMain('move-to-main');
+
+  const SessionScheduleDisposition(this.value);
+  final String value;
+}
+
+class SessionSchedules {
+  SessionSchedules.fromJson(Json json)
+    : revision = json['scheduleRevision'] as String,
+      jobs = _titles(json['jobs']),
+      monitors = _titles(json['monitors']) {
+    if (!_validRevision.hasMatch(revision)) throw const FormatException();
+  }
+
+  static final _validRevision = RegExp(r'^[a-f0-9]{64}$');
+  static List<String> _titles(Object? items) => List.unmodifiable(
+    (items as List).cast<Json>().map((entry) => entry['title'] as String),
+  );
+
+  final String revision;
+  final List<String> jobs;
+  final List<String> monitors;
+
+  bool get isEmpty => jobs.isEmpty && monitors.isEmpty;
+}
+
+enum SessionChangeResult { confirmed, differentTitle, unknown }
+
+typedef _SessionChange = ({
+  String? title,
+  SessionScheduleDisposition? disposition,
+});
+
 class Approval {
   Approval.fromJson(Json json)
     : id = json['id'] as String,
@@ -154,7 +189,9 @@ class ChatController extends ChangeNotifier {
   bool expired = false;
   bool _disposed = false;
   bool _directoryDirty = false;
-  Future<void>? _directoryRead;
+  Future<bool>? _directoryRead;
+  final _sessionChanges = <String, _SessionChange>{};
+  final _busySessionChanges = <String>{};
   MuseApi? _notificationApi;
   Timer? _reconnect;
   int _retry = 0;
@@ -171,6 +208,7 @@ class ChatController extends ChangeNotifier {
       _attachmentPickerOwner == null &&
       !expired &&
       !active.missing &&
+      pendingSessionDeletion(activeId) == null &&
       active.binding != null &&
       active.submission == null &&
       active.draftAttachments.length < maxChatAttachments &&
@@ -181,6 +219,7 @@ class ChatController extends ChangeNotifier {
       synchronized &&
       !expired &&
       !active.missing &&
+      pendingSessionDeletion(activeId) == null &&
       active.revision != null &&
       !active.dirty &&
       active.read == null &&
@@ -318,31 +357,196 @@ class ChatController extends ChangeNotifier {
     approvals.remove(id);
   }
 
-  Future<void> refreshDirectory() {
+  Future<bool> refreshDirectory() {
     _directoryDirty = true;
     return _directoryRead ??= _readDirectory();
   }
 
-  Future<void> _readDirectory() async {
+  Future<bool> _readDirectory() async {
     try {
       do {
         _directoryDirty = false;
         final data = await api.get('/api/sessions');
-        if (_disposed) return;
-        sessions = (data['sessions'] as List)
+        if (_disposed) return false;
+        // 通知或写后核对会使在途快照失效。只采用下一次请求的结果。
+        if (_directoryDirty) continue;
+        final entries = (data['sessions'] as List)
             .cast<Json>()
             .map(SessionEntry.fromJson)
             .toList();
+        final ids = entries.map((session) => session.id).toSet();
+        if (!ids.contains(mainSession) || ids.length != entries.length) {
+          throw const FormatException();
+        }
+        sessions = entries;
         directoryError = null;
+        final knownIds = {...conversations.keys, ..._sessionChanges.keys};
+        for (final id in knownIds.where((id) => !ids.contains(id))) {
+          _forgetSession(id);
+        }
       } while (_directoryDirty);
+      return true;
     } catch (error) {
       _checkAuth(error);
       directoryError = '读取会话失败，点此重试';
+      return false;
     } finally {
       _directoryRead = null;
       _changed();
     }
   }
+
+  SessionEntry? sessionEntry(String id) =>
+      sessions.where((session) => session.id == id).firstOrNull;
+
+  bool sessionChangeBusy(String id) => _busySessionChanges.contains(id);
+
+  String? pendingSessionTitle(String id) => _sessionChanges[id]?.title;
+
+  SessionScheduleDisposition? pendingSessionDeletion(String id) =>
+      _sessionChanges[id]?.disposition;
+
+  String _sessionPath(String id) => '/api/sessions/${Uri.encodeComponent(id)}';
+
+  Future<SessionSchedules> readSessionSchedules(String id) async {
+    try {
+      final data = await api.get('${_sessionPath(id)}/schedules');
+      return SessionSchedules.fromJson(data);
+    } catch (error) {
+      _checkAuth(error);
+      _changed();
+      rethrow;
+    }
+  }
+
+  Future<SessionChangeResult> renameSession(String id, String input) {
+    final title = input.trim();
+    if (title.isEmpty || title.length > 200) {
+      throw const FormatException('Invalid session title');
+    }
+    return _submitSessionChange(
+      id,
+      (title: title, disposition: null),
+      () async {
+        final data = await api.patch(_sessionPath(id), {'title': title});
+        final entry = SessionEntry.fromJson(data['session'] as Json);
+        if (entry.id != id || entry.title != title) {
+          throw const FormatException();
+        }
+        if (_disposed) return;
+        sessions = sessions.map((row) => row.id == id ? entry : row).toList();
+      },
+    );
+  }
+
+  Future<SessionChangeResult> deleteSession(
+    String id,
+    SessionSchedules schedules,
+    SessionScheduleDisposition disposition,
+  ) => _submitSessionChange(
+    id,
+    (title: null, disposition: disposition),
+    () async {
+      final data = await api.delete(_sessionPath(id), {
+        'scheduleRevision': schedules.revision,
+        'scheduleDisposition': disposition.value,
+      });
+      if (data['ok'] != true || (data['removed'] as Json)['sessions'] != 1) {
+        throw const FormatException();
+      }
+      if (_disposed) return;
+      sessions = sessions.where((row) => row.id != id).toList();
+      _forgetSession(id);
+    },
+  );
+
+  Future<SessionChangeResult> _submitSessionChange(
+    String id,
+    _SessionChange change,
+    Future<void> Function() submit,
+  ) async {
+    final previous = _sessionChanges[id];
+    if (_disposed ||
+        expired ||
+        !synchronized ||
+        id == mainSession ||
+        sessionEntry(id) == null ||
+        sessionChangeBusy(id) ||
+        (previous != null &&
+            (previous.disposition == null ||
+                previous.disposition != change.disposition))) {
+      throw const FormatException('Session change is not available');
+    }
+    _sessionChanges[id] = change;
+    _busySessionChanges.add(id);
+    _changed();
+    try {
+      await submit();
+      _sessionChanges.remove(id);
+      if (!_disposed) unawaited(refreshDirectory());
+      return SessionChangeResult.confirmed;
+    } catch (error) {
+      _checkAuth(error);
+      if (error is! ApiException ||
+          error.status == 0 ||
+          error.status == 408 ||
+          error.status == 404 ||
+          error.status >= 500) {
+        return await _verifySessionChange(id, change);
+      }
+      if (previous == null) {
+        _sessionChanges.remove(id);
+      } else if (sessionEntry(id) != null) {
+        _sessionChanges[id] = previous;
+      }
+      rethrow;
+    } finally {
+      _busySessionChanges.remove(id);
+      _changed();
+    }
+  }
+
+  Future<SessionChangeResult> verifySessionChange(String id) async {
+    final change = _sessionChanges[id];
+    if (change == null || !_busySessionChanges.add(id)) {
+      return SessionChangeResult.unknown;
+    }
+    _changed();
+    try {
+      return await _verifySessionChange(id, change);
+    } finally {
+      _busySessionChanges.remove(id);
+      _changed();
+    }
+  }
+
+  Future<SessionChangeResult> _verifySessionChange(
+    String id,
+    _SessionChange change,
+  ) async {
+    if (_disposed || !await refreshDirectory()) {
+      return SessionChangeResult.unknown;
+    }
+    final entry = sessionEntry(id);
+    if (change.disposition != null && entry != null) {
+      return SessionChangeResult.unknown;
+    }
+    _sessionChanges.remove(id);
+    return entry?.title == change.title
+        ? SessionChangeResult.confirmed
+        : SessionChangeResult.differentTitle;
+  }
+
+  void _forgetSession(String id) {
+    _sessionChanges.remove(id);
+    conversations.remove(id);
+    _runs.removeWhere((key, _) => key.$1 == id);
+    approvals.removeWhere((_, approval) => approval.sessionId == id);
+    if (activeId == id) select(mainSession);
+  }
+
+  bool _owns(Conversation conversation) =>
+      !_disposed && identical(conversations[conversation.id], conversation);
 
   void select(String id) {
     if (id == activeId) return;
@@ -362,6 +566,7 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> refresh(Conversation conversation) {
+    if (!_owns(conversation)) return Future.value();
     conversation.dirty = true;
     if (conversation.submission?.running == true) return Future.value();
     return conversation.read ??= _readHistory(conversation);
@@ -375,10 +580,18 @@ class ChatController extends ChangeNotifier {
           '/api/conversation',
           query: {'sessionId': conversation.id},
         );
-        if (_disposed) return;
+        if (!_owns(conversation)) return;
         if (conversation.dirty) continue;
         if (data['sessionId'] != conversation.id) throw const FormatException();
         final binding = data['piSessionId'] as String?;
+        if (binding == null && conversation.id != mainSession) {
+          // 删除途中可能先失去历史绑定，等目录确认后再丢弃本地草稿。
+          conversation.missing = true;
+          if (pendingSessionDeletion(conversation.id) == null) {
+            unawaited(refreshDirectory());
+          }
+          return;
+        }
         final history = (data['messages'] as List)
             .cast<Json>()
             .map(ChatMessage.fromJson)
@@ -461,7 +674,7 @@ class ChatController extends ChangeNotifier {
     conversation.attachmentError = null;
     _changed();
     bool stillCurrent() =>
-        !_disposed && !expired && conversation.binding == binding;
+        _owns(conversation) && !expired && conversation.binding == binding;
     try {
       final picked = await _attachmentPicker(
         maxFiles: maxChatAttachments - conversation.draftAttachments.length,
@@ -527,7 +740,7 @@ class ChatController extends ChangeNotifier {
                 .toList(),
         },
       })) {
-        if (_disposed) return;
+        if (!_owns(conversation)) return;
         final data = frame.data;
         switch (data['type']) {
           case 'TEXT_MESSAGE_CONTENT':
@@ -562,7 +775,7 @@ class ChatController extends ChangeNotifier {
       pending.settled = pending.settled || pending.rejection != null;
       conversation.error = '消息发送遇到问题，正在核对服务器记录';
     } finally {
-      if (!_disposed) {
+      if (_owns(conversation)) {
         pending.running = false;
         pending.stopping = false;
         pending.settled = pending.settled || finished;

@@ -6,6 +6,7 @@ import 'appearance_page.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
+import 'session_management.dart';
 import 'workspace_files.dart';
 import 'workspace_files_page.dart';
 
@@ -152,6 +153,7 @@ class _ChatPageState extends State<ChatPage> {
                   ListTile(title: Text(error), onTap: _chat.refreshDirectory),
                 for (final session in _chat.sessions)
                   ListTile(
+                    key: ValueKey(session.id),
                     shape: const StadiumBorder(),
                     title: Text(session.title),
                     leading: Icon(
@@ -162,6 +164,9 @@ class _ChatPageState extends State<ChatPage> {
                     selected: session.id == _chat.activeId,
                     selectedColor: colors.onSecondaryContainer,
                     selectedTileColor: colors.secondaryContainer,
+                    trailing: session.id == mainSession
+                        ? null
+                        : SessionManagementMenu(chat: _chat, session: session),
                     onTap: () =>
                         Navigator.pop(context, _SelectSession(session.id)),
                   ),
@@ -183,7 +188,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!mounted) return;
     switch (choice) {
       case _SelectSession(:final id):
-        _chat.select(id);
+        if (_chat.sessionEntry(id) != null) _chat.select(id);
       case _CreateSession():
         await showDialog<void>(
           context: context,

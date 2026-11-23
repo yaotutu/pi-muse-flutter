@@ -6,6 +6,10 @@
 
 点左上角打开侧边栏，点居中的会话标题切换或新建会话。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。已保存的回复可复制。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
 
+### 管理会话
+
+点顶部会话标题打开列表，在专题会话的「更多操作」中可重命名或删除。重命名保留历史和草稿。删除会永久移除该会话的聊天历史和反馈，确认前会显示关联的定时任务和网页监控。有任务或监控时，可选择一并删除，或保留并转到默认会话。删除当前会话后会回到默认会话。
+
 ### 更换配色
 
 打开「设置 → 外观」，在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的配色。设置仅保存在本机，浅色和深色仍自动跟随系统。
@@ -41,6 +45,10 @@ flutter run -d <android-device-id>
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, use the main chat to create or switch sessions.
 
 Open the drawer with the top-left menu button, or tap the centered session title to switch or create a session. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. You can copy saved replies. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+
+### Manage conversations
+
+Tap the session title at the top. Open **更多操作** (More actions) next to a topic session to rename or delete it. Renaming keeps the history and draft. Deleting permanently removes its chat history and feedback. The confirmation shows its scheduled jobs and web monitors. You can delete those too or move them to the default session. Deleting the active session returns you to the default session.
 
 ### Change the color palette
 
