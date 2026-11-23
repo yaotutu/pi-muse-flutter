@@ -33,7 +33,7 @@ void main() {
     expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(find.textContaining('传输时未加密'), findsOneWidget);
+    expect(find.textContaining('传输时未加密'), findsWidgets);
     expect(enableCalls, 0);
     await tester.tap(find.text('继续'));
     await tester.pumpAndSettle();

@@ -109,6 +109,40 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     }
   }
 
+  Widget _infoRow(IconData icon, String title, String subtitle, {Color? tone}) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final color = tone ?? scheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: tone ?? scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(color: color),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _status;
@@ -119,7 +153,8 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     final checking = status?['checking'] as int? ?? 0;
     final canRetry = status?['canRetry'] as int? ?? 0;
     final lastSuccess = status?['lastSuccess'] as int? ?? 0;
-    final actionRequired = switch (status?['status']) {
+    final block = status?['status'];
+    final actionRequired = switch (block) {
       'auth' => '连接已失效，请在设置中重新连接服务器。',
       'connection' => '无法读取服务器连接，请在设置中重新连接。',
       'disabled' => '服务器已关闭短信处理。启用后可点「立即同步」。',
@@ -127,12 +162,35 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
       'local_error' => '本机短信同步遇到错误，请重试。',
       _ => null,
     };
-    final waiting = switch (status?['status']) {
+    final waiting = switch (block) {
       'network' => '服务器暂时不可达，等待重试。',
       _ => '等待网络或服务器确认。',
     };
+    final urgent =
+        enabled &&
+        permission &&
+        (block == 'auth' || block == 'connection' || block == 'local_error');
+    final summary = !enabled
+        ? '本机同步已关闭。'
+        : !permission
+        ? '需要 Android 短信权限。'
+        : actionRequired ??
+              (pending > failed + canRetry
+                  ? waiting
+                  : pending == 0
+                  ? '当前没有待同步短信。'
+                  : '有短信需要处理。');
+    final canSync =
+        enabled &&
+        permission &&
+        !_busy &&
+        pending > failed &&
+        block != 'auth' &&
+        block != 'connection';
     final localizations = MaterialLocalizations.of(context);
     final successTime = DateTime.fromMillisecondsSinceEpoch(lastSuccess);
+    final scheme = Theme.of(context).colorScheme;
+    final caption = Theme.of(context).textTheme.bodySmall;
     return Scaffold(
       appBar: AppBar(title: const Text('短信同步')),
       body: SafeArea(
@@ -141,70 +199,110 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 12),
               children: [
                 SwitchListTile(
                   title: const Text('同步新短信'),
-                  subtitle: const Text(_disclosure),
+                  subtitle: const Text('新短信原文和发件人会发送到已连接的服务器'),
                   value: enabled,
                   onChanged: _busy || status == null ? null : _change,
                 ),
-                if (status != null)
-                  ListTile(
-                    title: Text('待同步 $pending 条'),
-                    subtitle: Text(
-                      !enabled
-                          ? '本机同步已关闭。'
-                          : !permission
-                          ? '需要 Android 短信权限。'
-                          : actionRequired ??
-                                (pending > failed + canRetry
-                                    ? waiting
-                                    : pending == 0
-                                    ? '当前没有待同步短信。'
-                                    : '有短信需要处理。'),
-                    ),
-                  ),
-                if (failed > 0)
-                  ListTile(subtitle: Text('$failed 条与服务器记录冲突或格式不符，已保留在本机。')),
-                if (checking > 0)
-                  ListTile(subtitle: Text('$checking 条正在核对是否已入队。')),
-                if (canRetry > 0)
-                  ListTile(subtitle: Text('$canRetry 条尚未在服务器找到，可点「立即同步」重试。')),
-                if (lastSuccess > 0)
-                  ListTile(
-                    subtitle: Text(
-                      '上次同步成功 ${localizations.formatCompactDate(successTime)} '
-                      '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(successTime))}',
-                    ),
-                  ),
-                if (_error case final error?)
-                  ListTile(
-                    subtitle: Text(
-                      error,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _disclosure,
+                        style: caption?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
+                      if (widget.connectionUsesHttp) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _httpDisclosure,
+                          style: caption?.copyWith(color: scheme.error),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                if (status == null && _error == null)
+                  const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else ...[
+                  if (status != null)
+                    _infoRow(
+                      Icons.outbox_outlined,
+                      '待同步 $pending 条',
+                      summary,
+                      tone: urgent ? scheme.error : null,
+                    ),
+                  if (failed > 0)
+                    _infoRow(
+                      Icons.error_outline,
+                      '$failed 条未能同步',
+                      '与服务器记录冲突或格式不符，已保留在本机。',
+                      tone: scheme.error,
+                    ),
+                  if (checking > 0)
+                    _infoRow(
+                      Icons.hourglass_top,
+                      '$checking 条正在核对入队结果',
+                      '正在向服务器确认是否已接收。',
+                    ),
+                  if (canRetry > 0)
+                    _infoRow(
+                      Icons.search_off,
+                      '$canRetry 条等待重试',
+                      '尚未在服务器找到，可点下方「立即同步」重试。',
+                    ),
+                  if (lastSuccess > 0)
+                    _infoRow(
+                      Icons.cloud_done_outlined,
+                      '上次确认成功',
+                      '${localizations.formatCompactDate(successTime)} '
+                          '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(successTime))}',
+                    ),
+                  if (_error case final error?)
+                    _infoRow(
+                      Icons.error_outline,
+                      '出错了',
+                      error,
+                      tone: scheme.error,
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (enabled && !permission)
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : () => _change(true),
+                            icon: const Icon(Icons.gpp_maybe_outlined),
+                            label: const Text('重新授权短信权限'),
+                          )
+                        else
+                          FilledButton.tonalIcon(
+                            onPressed: canSync
+                                ? () => _run(SmsSync.retry)
+                                : null,
+                            icon: const Icon(Icons.sync),
+                            label: const Text('立即同步'),
+                          ),
+                        if (_busy) ...[
+                          const SizedBox(height: 12),
+                          const LinearProgressIndicator(),
+                        ],
+                      ],
                     ),
                   ),
-                if (enabled && !permission)
-                  ListTile(
-                    title: const Text('重新授权'),
-                    onTap: _busy ? null : () => _change(true),
-                  ),
-                if (enabled && permission)
-                  ListTile(
-                    title: const Text('立即同步'),
-                    leading: const Icon(Icons.sync),
-                    enabled:
-                        !_busy &&
-                        pending > failed &&
-                        status?['status'] != 'auth' &&
-                        status?['status'] != 'connection',
-                    onTap: () => _run(SmsSync.retry),
-                  ),
-                if (_busy || (status == null && _error == null))
-                  const LinearProgressIndicator(),
+                ],
               ],
             ),
           ),
