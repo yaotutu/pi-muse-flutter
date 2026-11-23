@@ -231,6 +231,24 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<void> _changeReaction(
+    Conversation conversation,
+    String binding,
+    String id,
+    MessageReaction? selection,
+  ) async {
+    try {
+      await _chat.changeReaction(conversation, binding, id, selection);
+    } catch (_) {
+      if (!mounted || !identical(_chat.active, conversation)) return;
+      final unconfirmed =
+          conversation.reactionState(id) == ReactionRequestState.unconfirmed;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(unconfirmed ? '请从消息操作核对反馈状态' : '暂时无法更新反馈')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -239,6 +257,9 @@ class _ChatPageState extends State<ChatPage> {
         final theme = Theme.of(context);
         final colors = theme.colorScheme;
         final conversation = _chat.active;
+        final binding = conversation.binding;
+        final reactionsEnabled =
+            binding != null && _chat.canReact(conversation);
         final title =
             _chat.sessions
                 .where((session) => session.id == conversation.id)
@@ -373,8 +394,32 @@ class _ChatPageState extends State<ChatPage> {
                                             ))
                                           _ChatDateLabel(sentAt),
                                         ChatMessageView(
+                                          key: ValueKey(message.id),
                                           message: message,
                                           confirmed: confirmed,
+                                          reactionState: conversation
+                                              .reactionState(message.id),
+                                          onQuote:
+                                              confirmed &&
+                                                  conversation.canEditDraft
+                                              ? () {
+                                                  if (_chat.quoteMessage(
+                                                    conversation,
+                                                    binding,
+                                                    message.id,
+                                                  )) {
+                                                    _focus.requestFocus();
+                                                  }
+                                                }
+                                              : null,
+                                          onReaction: reactionsEnabled
+                                              ? (reaction) => _changeReaction(
+                                                  conversation,
+                                                  binding,
+                                                  message.id,
+                                                  reaction,
+                                                )
+                                              : null,
                                         ),
                                       ],
                                     );
@@ -390,7 +435,9 @@ class _ChatPageState extends State<ChatPage> {
                       )
                     else if (conversation.submission
                         case final Submission pending
-                        when !pending.running && !pending.settled)
+                        when !pending.running &&
+                            !pending.settled &&
+                            !conversation.waitingToSend)
                       TextButton(
                         onPressed: pending.verifying
                             ? null
@@ -430,6 +477,22 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                         ),
                       ),
+                    if (conversation.hasRecoveredDraft)
+                      TextButton(
+                        onPressed:
+                            conversation.canEditDraft &&
+                                !_chat.pickingAttachments
+                            ? _chat.recoverDraft
+                            : null,
+                        child: const Text('切换未发送草稿'),
+                      ),
+                    if (conversation.quote case final MessageQuote quote)
+                      _QuotePreview(
+                        quote: quote,
+                        onRemove: conversation.canEditDraft
+                            ? _chat.removeQuote
+                            : null,
+                      ),
                     if (conversation.draftAttachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -447,7 +510,9 @@ class _ChatPageState extends State<ChatPage> {
                                     child: ChatAttachmentTile(
                                       key: ValueKey(attachment.id),
                                       attachment: attachment,
-                                      onRemove: _chat.pickingAttachments
+                                      onRemove:
+                                          _chat.pickingAttachments ||
+                                              !conversation.canEditDraft
                                           ? null
                                           : () => _chat.removeDraftAttachment(
                                               attachment.id,
@@ -517,7 +582,7 @@ class _ChatPageState extends State<ChatPage> {
                                 child: TextField(
                                   controller: _composer,
                                   focusNode: _focus,
-                                  readOnly: conversation.submission != null,
+                                  readOnly: !conversation.canEditDraft,
                                   onChanged: _chat.setDraft,
                                   minLines: 1,
                                   maxLines: compact ? 3 : 5,
@@ -543,20 +608,31 @@ class _ChatPageState extends State<ChatPage> {
                               ValueListenableBuilder(
                                 valueListenable: _composer,
                                 builder: (context, value, _) {
+                                  final hasContent =
+                                      value.text.trim().isNotEmpty ||
+                                      conversation.draftAttachments.isNotEmpty;
+                                  final waiting = conversation.waitingToSend;
                                   final action = running
-                                      ? pending!.stopping
-                                            ? null
-                                            : _chat.stop
-                                      : _chat.canSend &&
-                                            (value.text.trim().isNotEmpty ||
-                                                conversation
-                                                    .draftAttachments
-                                                    .isNotEmpty)
+                                      ? _chat.canStop(sendNext: hasContent)
+                                            ? hasContent
+                                                  ? _chat.stopAndSend
+                                                  : _chat.stop
+                                            : null
+                                      : _chat.canSend && hasContent
                                       ? _chat.send
                                       : null;
+                                  final label = waiting
+                                      ? '正在停止并准备发送'
+                                      : running
+                                      ? hasContent
+                                            ? '停止并发送'
+                                            : '停止回复'
+                                      : '发送';
                                   return IconButton(
-                                    key: ValueKey(running ? 'stop' : 'send'),
-                                    tooltip: running ? '停止回复' : '发送',
+                                    key: ValueKey(
+                                      running || waiting ? 'stop' : 'send',
+                                    ),
+                                    tooltip: label,
                                     onPressed: action,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints.tightFor(
@@ -573,8 +649,10 @@ class _ChatPageState extends State<ChatPage> {
                                       child: SizedBox.square(
                                         dimension: 36,
                                         child: Icon(
-                                          running
-                                              ? Icons.stop_rounded
+                                          running || waiting
+                                              ? hasContent
+                                                    ? Icons.send_outlined
+                                                    : Icons.stop_rounded
                                               : Icons.arrow_upward_rounded,
                                           color: action == null
                                               ? colors.outline
@@ -598,6 +676,69 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _QuotePreview extends StatelessWidget {
+  const _QuotePreview({required this.quote, required this.onRemove});
+
+  final MessageQuote quote;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+      child: Material(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(
+            start: 12,
+            top: 4,
+            bottom: 4,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.format_quote_outlined,
+                color: colors.onSecondaryContainer,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      quote.label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colors.onSecondaryContainer,
+                      ),
+                    ),
+                    Text(
+                      quote.excerpt,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSecondaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: '移除引用',
+                onPressed: onRemove,
+                icon: const Icon(Icons.close, size: 18),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

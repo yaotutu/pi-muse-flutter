@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pi_muse_flutter/src/api.dart';
@@ -68,7 +69,134 @@ class _SessionApi extends MuseApi {
   }
 }
 
+class _MessageApi extends _SessionApi {
+  final runFrames = StreamController<SseFrame>();
+  final writes = <Json>[];
+  final submissions = <Json>[];
+  final stops = <Json>[];
+
+  @override
+  Stream<SseFrame> run(Json body) {
+    submissions.add(body);
+    return runFrames.stream;
+  }
+
+  @override
+  Future<Json> post(String path, Json body) async {
+    expect(path, '/api/conversation/stop');
+    stops.add(body);
+    return {'stopped': false};
+  }
+
+  @override
+  Future<Json> put(String path, Json body) async {
+    expect(path, '/api/sessions/main/messages/answer/feedback/reaction');
+    writes.add(body);
+    return {'reaction': body['reaction'], 'comments': []};
+  }
+}
+
 void main() {
+  testWidgets('message actions copy, react, quote and stop from the composer', (
+    tester,
+  ) async {
+    final api = _MessageApi();
+    final chat = ChatController(api, () => api)..synchronized = true;
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(chat.dispose);
+    addTearDown(appearance.dispose);
+    final clipboard = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    chat.active
+      ..binding = 'binding'
+      ..revision = 'empty'
+      ..dirty = false
+      ..history = const [
+        ChatMessage('question', 'user', 'Original question'),
+        ChatMessage(
+          'answer',
+          'assistant',
+          '<think>Hidden</think>**Visible reply**',
+          feedbackAvailable: true,
+        ),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
+      ),
+    );
+
+    Future<void> menu(String id, String label) async {
+      final button = find.descendant(
+        of: find.byKey(ValueKey(id)),
+        matching: find.byTooltip('消息操作'),
+      );
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      final item = find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+      );
+      await tester.tap(item);
+      await tester.pumpAndSettle();
+    }
+
+    await menu('question', '复制全文');
+    await tester.tap(find.byTooltip('复制'));
+    await tester.pumpAndSettle();
+    expect(clipboard, ['Original question', '**Visible reply**']);
+    final snacks = tester.state<ScaffoldMessengerState>(
+      find.byType(ScaffoldMessenger),
+    );
+    snacks.clearSnackBars();
+    await tester.pumpAndSettle();
+    await menu('answer', '点赞');
+    await menu('answer', '撤销点赞');
+    expect(api.writes, [
+      {'piSessionId': 'binding', 'reaction': 'like'},
+      {'piSessionId': 'binding', 'reaction': null},
+    ]);
+
+    final composer = find.byType(TextField);
+    await tester.enterText(composer, 'Draft question');
+    await menu('answer', '引用回复');
+    expect(find.text('助手回复'), findsOneWidget);
+    expect(find.text('**Visible reply**'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(composer).controller!.text,
+      'Draft question',
+    );
+    await tester.tap(find.byTooltip('移除引用'));
+    await tester.pumpAndSettle();
+    expect(find.text('助手回复'), findsNothing);
+    await tester.tap(find.byTooltip('发送'));
+    await tester.pump();
+    expect(find.byTooltip('停止回复'), findsOneWidget);
+    await tester.enterText(composer, 'New question');
+    await tester.pump();
+    final interrupt = find.byTooltip('停止并发送');
+    expect(interrupt, findsOneWidget);
+    await tester.tap(interrupt);
+    await tester.pumpAndSettle();
+    expect(api.stops.single['runId'], api.submissions.single['runId']);
+    expect(api.submissions, hasLength(1));
+    expect(tester.widget<TextField>(composer).controller!.text, 'New question');
+    await api.runFrames.close();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets(
     'manage topics from the drawer and re-confirm a changed task list',
     (tester) async {

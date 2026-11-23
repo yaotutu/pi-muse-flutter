@@ -178,6 +178,8 @@ class MuseApi {
   Future<Json> post(String path, Json body) =>
       _request('POST', path, body: body);
 
+  Future<Json> put(String path, Json body) => _request('PUT', path, body: body);
+
   Future<Json> patch(String path, Json body) =>
       _request('PATCH', path, body: body);
 

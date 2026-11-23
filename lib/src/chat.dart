@@ -1,12 +1,28 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show StringCharacters;
 
 import 'api.dart';
 import 'chat_attachment.dart';
+import 'visible_text.dart';
 
 const mainSession = 'main';
+const maxChatMessageLength = 32000;
+const _followUpTimeout = Duration(seconds: 15);
+
+enum MessageReaction { like, dislike }
+
+enum ReactionRequestState { busy, unconfirmed }
+
+MessageReaction? _readReaction(Json feedback) => switch (feedback['reaction']) {
+  'like' => MessageReaction.like,
+  'dislike' => MessageReaction.dislike,
+  null when feedback.containsKey('reaction') => null,
+  _ => throw const FormatException('Invalid message reaction'),
+};
 
 class ChatMessage {
   const ChatMessage(
@@ -15,16 +31,25 @@ class ChatMessage {
     this.text, {
     this.attachments = const [],
     this.sentAt,
+    this.source,
+    this.feedbackAvailable = false,
+    this.reaction,
   });
 
   factory ChatMessage.fromJson(Json json) {
-    final metadata = json['metadata'];
-    final createdAt = metadata is Json ? metadata['createdAt'] : null;
+    final metadata = json['metadata'] as Json?;
+    final createdAt = metadata?['createdAt'];
+    final feedback = json['feedback'];
+    final feedbackAvailable =
+        metadata?['feedbackAvailable'] == true && feedback is Json;
     return ChatMessage(
       json['id'] as String,
       json['role'] as String,
       json['content'] as String? ?? '',
       sentAt: createdAt is String ? DateTime.tryParse(createdAt) : null,
+      source: metadata?['source'] as String?,
+      feedbackAvailable: feedbackAvailable,
+      reaction: feedbackAvailable ? _readReaction(feedback) : null,
       attachments:
           (json['attachments'] as List?)
               ?.cast<Json>()
@@ -39,7 +64,57 @@ class ChatMessage {
   final String text;
   final List<ChatAttachment> attachments;
   final DateTime? sentAt;
+  final String? source;
+  final bool feedbackAvailable;
+  final MessageReaction? reaction;
+
+  String get visibleText =>
+      role == 'assistant' ? visibleAssistantText(text) : text;
+  bool get canQuote =>
+      (source == null || source == 'chat') &&
+      (role == 'user' || role == 'assistant') &&
+      visibleText.trim().isNotEmpty;
+
+  ChatMessage _withReaction(MessageReaction? value) => ChatMessage(
+    id,
+    role,
+    text,
+    attachments: attachments,
+    sentAt: sentAt,
+    source: source,
+    feedbackAvailable: feedbackAvailable,
+    reaction: value,
+  );
 }
+
+class MessageQuote {
+  MessageQuote._(ChatMessage message)
+    : label = message.role == 'assistant' ? '助手回复' : '我的消息',
+      excerpt = _quoteExcerpt(message.visibleText.trim());
+
+  static String _quoteExcerpt(String text) {
+    var end = 0;
+    for (final character in text.characters.take(1200)) {
+      if (end + character.length > 4800) break;
+      end += character.length;
+    }
+    return end == text.length ? text : '${text.substring(0, end)}…';
+  }
+
+  final String label;
+  final String excerpt;
+
+  String compose(String text) {
+    final lines = const LineSplitter().convert(excerpt);
+    return '> $label\n${lines.map((line) => '> $line').join('\n')}\n\n$text';
+  }
+}
+
+typedef _Draft = ({
+  String text,
+  MessageQuote? quote,
+  List<DraftAttachment> attachments,
+});
 
 class SessionEntry {
   const SessionEntry(this.id, this.title);
@@ -112,11 +187,14 @@ class Approval {
 }
 
 class Submission {
-  Submission(this.runId, this.message, this.attachments);
+  Submission(this.runId, this.message, this._draft);
 
   final String runId;
   final ChatMessage message;
-  final List<DraftAttachment> attachments;
+  final _Draft _draft;
+  final _closed = Completer<void>();
+  final _workspaceTerminal = Completer<void>();
+  bool _streamTerminal = false;
   final replies = <String, String>{};
   String? rejection;
   bool running = true;
@@ -132,12 +210,48 @@ class Submission {
   }
 }
 
+class _FollowUp {
+  _FollowUp(this.binding, this.previous, this.draft);
+
+  final String? binding;
+  final Submission previous;
+  final _Draft draft;
+  final cancelled = Completer<void>();
+}
+
 class Conversation {
   Conversation(this.id);
 
   final String id;
   String draft = '';
   List<DraftAttachment> draftAttachments = const [];
+  MessageQuote? quote;
+  final _recoveredDrafts = <_Draft>[];
+  final _reactions = <String, ReactionRequestState>{};
+  _FollowUp? _followUp;
+
+  bool get waitingToSend => _followUp != null;
+  bool get canEditDraft => !waitingToSend && (submission?.running ?? true);
+  bool get hasRecoveredDraft => _recoveredDrafts.isNotEmpty;
+  ReactionRequestState? reactionState(String id) => _reactions[id];
+
+  _Draft get _draft =>
+      (text: draft, quote: quote, attachments: draftAttachments);
+  bool get _draftIsEmpty =>
+      draft.isEmpty && quote == null && draftAttachments.isEmpty;
+
+  void _applyDraft(_Draft value) {
+    draft = value.text;
+    quote = value.quote;
+    draftAttachments = value.attachments;
+  }
+
+  void _clearDraft() {
+    draft = '';
+    quote = null;
+    draftAttachments = const [];
+  }
+
   String? attachmentError;
   String? revision;
 
@@ -210,25 +324,50 @@ class ChatController extends ChangeNotifier {
       !active.missing &&
       pendingSessionDeletion(activeId) == null &&
       active.binding != null &&
-      active.submission == null &&
+      active.canEditDraft &&
       active.draftAttachments.length < maxChatAttachments &&
       active.draftAttachmentBytes < maxChatAttachmentBytes;
 
-  bool get canSend =>
-      !pickingAttachments &&
+  bool get canSend => !active.waitingToSend && _canSend(active);
+
+  bool canReact(Conversation conversation) =>
+      _owns(conversation) &&
       synchronized &&
       !expired &&
-      !active.missing &&
-      pendingSessionDeletion(activeId) == null &&
-      active.revision != null &&
-      !active.dirty &&
-      active.read == null &&
-      active.historyError == null &&
-      active.submission == null &&
-      !_runs.values.any((run) => run['sessionId'] == activeId);
+      !conversation.missing &&
+      pendingSessionDeletion(conversation.id) == null;
+
+  bool canStop({required bool sendNext}) {
+    final conversation = active;
+    final pending = conversation.submission;
+    return !expired &&
+        pending?.running == true &&
+        !pending!.stopping &&
+        !conversation.waitingToSend &&
+        (!sendNext ||
+            (synchronized &&
+                !pickingAttachments &&
+                conversation.binding != null &&
+                pendingSessionDeletion(conversation.id) == null));
+  }
+
+  bool _canSend(Conversation conversation) =>
+      _owns(conversation) &&
+      !identical(_attachmentPickerOwner, conversation) &&
+      synchronized &&
+      !expired &&
+      !conversation.missing &&
+      pendingSessionDeletion(conversation.id) == null &&
+      conversation.revision != null &&
+      !conversation.dirty &&
+      conversation.read == null &&
+      conversation.historyError == null &&
+      conversation.submission == null &&
+      !_runs.keys.any((key) => key.$1 == conversation.id);
 
   String? get activityLabel {
     final pending = active.submission;
+    if (active.waitingToSend) return '正在停止并准备发送';
     if (pending?.stopping == true) return '正在停止';
     if (!synchronized) return null;
     final run = _runs.values
@@ -252,6 +391,7 @@ class ChatController extends ChangeNotifier {
     _reconnect?.cancel();
     _notificationApi?.close();
     synchronized = false;
+    _cancelFollowUps();
     final transport = openEvents();
     _notificationApi = transport;
     _changed();
@@ -271,6 +411,7 @@ class ChatController extends ChangeNotifier {
       if (_notificationApi == transport) {
         _notificationApi = null;
         synchronized = false;
+        _cancelFollowUps();
         _changed();
         if (!_disposed && !expired) {
           final seconds = 1 << min(_retry++, 5);
@@ -288,7 +429,9 @@ class ChatController extends ChangeNotifier {
           .cast<Json>()
           .map(Approval.fromJson)
           .toList();
-      _instanceId = data['instanceId'] as String;
+      final instanceId = data['instanceId'] as String;
+      if (_instanceId != instanceId) _cancelFollowUps();
+      _instanceId = instanceId;
       _runs.clear();
       _runRevisions.clear();
       approvals.clear();
@@ -329,16 +472,25 @@ class ChatController extends ChangeNotifier {
     _runRevisions[key] = revision;
     if (run['status'] == 'running') {
       _runs[key] = run;
-    } else {
-      _runs.remove(key);
+    } else if (_isTerminalStatus(run['status'])) {
+      final wasRunning = _runs.remove(key) != null;
       final conversation = conversations[key.$1];
-      final pending = conversation?.submission;
-      if (conversation != null && pending?.runId == key.$2) {
+      if (conversation == null) return;
+      final pending =
+          conversation.submission ?? conversation._followUp?.previous;
+      final isLocalRun = pending?.runId == key.$2;
+      if (isLocalRun) {
         pending!.settled = true;
-        unawaited(refresh(conversation));
+        if (!pending._workspaceTerminal.isCompleted) {
+          pending._workspaceTerminal.complete();
+        }
       }
+      if (wasRunning || isLocalRun) unawaited(refresh(conversation));
     }
   }
+
+  bool _isTerminalStatus(Object? status) =>
+      status == 'succeeded' || status == 'failed' || status == 'cancelled';
 
   void _recordApproval(Approval approval, {bool snapshot = false}) {
     final known = _approvalRevisions[approval.id] ?? 0;
@@ -478,6 +630,10 @@ class ChatController extends ChangeNotifier {
       throw const FormatException('Session change is not available');
     }
     _sessionChanges[id] = change;
+    final conversation = conversations[id];
+    if (change.disposition != null && conversation != null) {
+      _cancelFollowUp(conversation);
+    }
     _busySessionChanges.add(id);
     _changed();
     try {
@@ -539,7 +695,8 @@ class ChatController extends ChangeNotifier {
 
   void _forgetSession(String id) {
     _sessionChanges.remove(id);
-    conversations.remove(id);
+    final removed = conversations.remove(id);
+    if (removed != null) _clearFollowUp(removed);
     _runs.removeWhere((key, _) => key.$1 == id);
     approvals.removeWhere((_, approval) => approval.sessionId == id);
     if (activeId == id) select(mainSession);
@@ -587,6 +744,7 @@ class ChatController extends ChangeNotifier {
         if (binding == null && conversation.id != mainSession) {
           // 删除途中可能先失去历史绑定，等目录确认后再丢弃本地草稿。
           conversation.missing = true;
+          _clearFollowUp(conversation);
           if (pendingSessionDeletion(conversation.id) == null) {
             unawaited(refreshDirectory());
           }
@@ -606,15 +764,21 @@ class ChatController extends ChangeNotifier {
           if (saved || bindingChanged || binding == null) {
             conversation.submission = null;
           } else if (pending.settled) {
-            conversation.draft = pending.message.text;
-            conversation.draftAttachments = pending.attachments;
-            conversation.error = pending.rejection ?? '服务器未保存这条消息，草稿已恢复';
+            if (conversation._draftIsEmpty) {
+              conversation._applyDraft(pending._draft);
+              conversation.error = pending.rejection ?? '服务器未保存这条消息，草稿已恢复';
+            } else {
+              conversation._recoveredDrafts.add(pending._draft);
+              conversation.error = '上一条消息未保存，可从未发送草稿中找回';
+            }
             conversation.submission = null;
           }
         }
         if (bindingChanged) {
-          conversation.draft = '';
-          conversation.draftAttachments = const [];
+          _clearFollowUp(conversation);
+          conversation._clearDraft();
+          conversation._recoveredDrafts.clear();
+          conversation._reactions.clear();
           conversation.attachmentError = null;
           conversation.error = null;
         }
@@ -636,7 +800,12 @@ class ChatController extends ChangeNotifier {
   Future<void> verifySubmission() async {
     final conversation = active;
     final pending = conversation.submission;
-    if (pending == null || pending.running || pending.verifying) return;
+    if (pending == null ||
+        pending.running ||
+        pending.verifying ||
+        conversation.waitingToSend) {
+      return;
+    }
     pending.verifying = true;
     _changed();
     try {
@@ -664,7 +833,111 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  void setDraft(String draft) => active.draft = draft;
+  ChatMessage? _savedMessage(Conversation conversation, String id) =>
+      conversation.history.where((message) => message.id == id).firstOrNull;
+
+  Future<void> changeReaction(
+    Conversation conversation,
+    String binding,
+    String id,
+    MessageReaction? selection,
+  ) async {
+    final message = _savedMessage(conversation, id);
+    final state = conversation.reactionState(id);
+    final verifying = selection == null;
+    if (!canReact(conversation) ||
+        conversation.binding != binding ||
+        message == null ||
+        !message.feedbackAvailable ||
+        (verifying
+            ? state != ReactionRequestState.unconfirmed
+            : state != null)) {
+      return;
+    }
+    final path =
+        '${_sessionPath(conversation.id)}/messages/${Uri.encodeComponent(id)}/feedback';
+    bool stillCurrent() =>
+        _owns(conversation) &&
+        !conversation.missing &&
+        conversation.binding == binding &&
+        !expired;
+    conversation._reactions[id] = ReactionRequestState.busy;
+    _changed();
+    try {
+      final response = selection == null
+          ? await api.get(path, query: {'piSessionId': binding})
+          : await api.put('$path/reaction', {
+              'piSessionId': binding,
+              'reaction': selection == message.reaction ? null : selection.name,
+            });
+      if (response['comments'] is! List) throw const FormatException();
+      final reaction = _readReaction(response);
+      if (!stillCurrent() || expired) return;
+      // 丢弃写入前已开始的历史读取，避免旧反应重新覆盖按钮。
+      if (conversation.read != null) conversation.dirty = true;
+      conversation.history = [
+        for (final saved in conversation.history)
+          saved.id == id ? saved._withReaction(reaction) : saved,
+      ];
+      conversation._reactions.remove(id);
+    } catch (error) {
+      _checkAuth(error);
+      if (!stillCurrent()) return;
+      if (error is ApiException &&
+          (error.status == 404 || error.status == 409)) {
+        conversation._reactions.remove(id);
+        unawaited(refresh(conversation));
+      } else if (verifying ||
+          error is! ApiException ||
+          error.status == 0 ||
+          error.status == 408 ||
+          error.status >= 500) {
+        conversation._reactions[id] = ReactionRequestState.unconfirmed;
+      } else {
+        conversation._reactions.remove(id);
+      }
+      rethrow;
+    } finally {
+      _changed();
+    }
+  }
+
+  void setDraft(String draft) {
+    if (active.canEditDraft) active.draft = draft;
+  }
+
+  bool quoteMessage(Conversation conversation, String? binding, String id) {
+    if (!identical(conversation, active) ||
+        conversation.binding != binding ||
+        conversation.missing ||
+        !conversation.canEditDraft) {
+      return false;
+    }
+    final message = _savedMessage(conversation, id);
+    if (message == null || !message.canQuote) return false;
+    conversation.quote = MessageQuote._(message);
+    _changed();
+    return true;
+  }
+
+  void removeQuote() {
+    if (!active.canEditDraft) return;
+    active.quote = null;
+    _changed();
+  }
+
+  void recoverDraft() {
+    final conversation = active;
+    if (!conversation.canEditDraft || !conversation.hasRecoveredDraft) return;
+    final recovered = conversation._recoveredDrafts.removeAt(0);
+    if (!conversation._draftIsEmpty) {
+      conversation._recoveredDrafts.add(conversation._draft);
+    }
+    conversation._applyDraft(recovered);
+    conversation.error = null;
+    conversation.attachmentError = null;
+    _changed();
+  }
 
   Future<void> chooseAttachments() async {
     if (!canPickAttachments) return;
@@ -698,7 +971,7 @@ class ChatController extends ChangeNotifier {
   }
 
   void removeDraftAttachment(String id) {
-    if (pickingAttachments || active.submission != null) return;
+    if (pickingAttachments || !active.canEditDraft) return;
     active.draftAttachments = List.unmodifiable(
       active.draftAttachments.where((attachment) => attachment.id != id),
     );
@@ -706,11 +979,29 @@ class ChatController extends ChangeNotifier {
     _changed();
   }
 
-  Future<void> send() async {
+  String? _outgoingText(Conversation conversation, _Draft draft) {
+    if (draft.text.trim().isEmpty && draft.attachments.isEmpty) return null;
+    final text = draft.quote?.compose(draft.text) ?? draft.text;
+    if (text.length <= maxChatMessageLength) return text;
+    conversation.error = '消息正文（含引用）最多 $maxChatMessageLength 个字符';
+    _changed();
+    return null;
+  }
+
+  Future<void> send() {
     final conversation = active;
-    final text = conversation.draft;
-    final attachments = conversation.draftAttachments;
-    if (!canSend || (text.trim().isEmpty && attachments.isEmpty)) return;
+    if (!canSend) return Future.value();
+    final draft = conversation._draft;
+    final text = _outgoingText(conversation, draft);
+    return text == null ? Future.value() : _send(conversation, draft, text);
+  }
+
+  Future<void> _send(
+    Conversation conversation,
+    _Draft draft,
+    String text,
+  ) async {
+    final attachments = draft.attachments;
     final message = ChatMessage(
       _newId(),
       'user',
@@ -718,14 +1009,12 @@ class ChatController extends ChangeNotifier {
       attachments: attachments,
       sentAt: DateTime.now(),
     );
-    final pending = Submission(_newId(), message, attachments);
-    conversation.draft = '';
-    conversation.draftAttachments = const [];
+    final pending = Submission(_newId(), message, draft);
+    conversation._clearDraft();
     conversation.attachmentError = null;
     conversation.error = null;
     conversation.submission = pending;
     _changed();
-    var finished = false;
     try {
       await for (final frame in api.run({
         'sessionId': conversation.id,
@@ -753,15 +1042,21 @@ class ChatController extends ChangeNotifier {
             );
             _changed();
           case 'RUN_FINISHED':
-            finished = true;
+            pending._streamTerminal =
+                pending._streamTerminal ||
+                (data['runId'] == pending.runId &&
+                    data['sessionId'] == conversation.id);
           case 'RUN_ERROR':
-            finished = true;
+            // RUN_ERROR 属于本次专用响应流，协议不返回运行 ID。
+            pending._streamTerminal = true;
             if (data['code'] != 'STOPPED' && !pending.stopping) {
               conversation.error = '本次回复未完成';
             }
         }
       }
-      if (!finished) conversation.error = '回复连接中断，正在核对发送结果';
+      if (!pending._streamTerminal && !pending.settled) {
+        conversation.error = '回复连接中断，正在核对发送结果';
+      }
     } catch (error) {
       _checkAuth(error);
       // 只把服务端明确的前置拒绝视为终态，仍先回读历史再恢复草稿。
@@ -775,10 +1070,11 @@ class ChatController extends ChangeNotifier {
       pending.settled = pending.settled || pending.rejection != null;
       conversation.error = '消息发送遇到问题，正在核对服务器记录';
     } finally {
-      if (_owns(conversation)) {
-        pending.running = false;
-        pending.stopping = false;
-        pending.settled = pending.settled || finished;
+      pending.running = false;
+      pending.stopping = false;
+      pending.settled = pending.settled || pending._streamTerminal;
+      pending._closed.complete();
+      if (_owns(conversation) && conversation.submission == pending) {
         unawaited(refresh(conversation));
         _changed();
       }
@@ -786,9 +1082,14 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    final conversation = active;
-    final pending = conversation.submission;
-    if (pending == null || !pending.running || pending.stopping) return;
+    if (!canStop(sendNext: false)) return;
+    await _requestStop(active, active.submission!);
+  }
+
+  Future<bool> _requestStop(
+    Conversation conversation,
+    Submission pending,
+  ) async {
     pending.stopping = true;
     _changed();
     try {
@@ -796,18 +1097,88 @@ class ChatController extends ChangeNotifier {
         'sessionId': conversation.id,
         'runId': pending.runId,
       });
-      if (result['stopped'] != true && pending.running) {
-        pending.stopping = false;
-        conversation.error = '停止尚未确认，可稍后再试';
-      }
+      if (result['stopped'] == true) return true;
     } catch (error) {
       _checkAuth(error);
-      pending.stopping = false;
-      if (conversation.submission == pending) {
-        conversation.error = '停止尚未确认，可稍后再试';
-      }
+    }
+    pending.stopping = false;
+    if (_owns(conversation) &&
+        conversation.submission == pending &&
+        pending.running) {
+      conversation.error = '停止尚未确认，可稍后再试';
     }
     _changed();
+    return false;
+  }
+
+  Future<void> stopAndSend() async {
+    if (!canStop(sendNext: true)) return;
+    final conversation = active;
+    final followUp = _FollowUp(
+      conversation.binding,
+      conversation.submission!,
+      conversation._draft,
+    );
+    final text = _outgoingText(conversation, followUp.draft);
+    if (text == null) return;
+    conversation._followUp = followUp;
+    conversation.error = null;
+    final confirmed = await Future.any<bool>([
+      _confirmFollowUp(conversation, followUp),
+      followUp.cancelled.future.then((_) => false),
+    ]).timeout(_followUpTimeout, onTimeout: () => false);
+    if (!_ownsFollowUp(conversation, followUp)) return;
+    if (!confirmed || !_canSend(conversation)) {
+      _cancelFollowUp(conversation);
+      _changed();
+      return;
+    }
+    _clearFollowUp(conversation);
+    await _send(conversation, followUp.draft, text);
+  }
+
+  Future<bool> _confirmFollowUp(
+    Conversation conversation,
+    _FollowUp followUp,
+  ) async {
+    final previous = followUp.previous;
+    if (!await _requestStop(conversation, previous)) return false;
+    await previous._closed.future;
+    if (!_ownsFollowUp(conversation, followUp)) return false;
+    final tracked = _runs.containsKey((conversation.id, previous.runId));
+    if (!previous._streamTerminal || tracked) {
+      await previous._workspaceTerminal.future;
+      if (!_ownsFollowUp(conversation, followUp)) return false;
+    }
+    // Stop 的回执和两条 SSE 可以乱序。终态确认后重新读取历史和 revision。
+    await refresh(conversation);
+    return _ownsFollowUp(conversation, followUp) &&
+        conversation.history.any(
+          (message) => message.id == previous.message.id,
+        );
+  }
+
+  bool _ownsFollowUp(Conversation conversation, _FollowUp followUp) =>
+      _owns(conversation) &&
+      identical(conversation._followUp, followUp) &&
+      conversation.binding == followUp.binding;
+
+  void _clearFollowUp(Conversation conversation) {
+    final followUp = conversation._followUp;
+    conversation._followUp = null;
+    followUp?.cancelled.complete();
+  }
+
+  void _cancelFollowUp(Conversation conversation) {
+    if (!conversation.waitingToSend) return;
+    _clearFollowUp(conversation);
+    conversation.error ??= '未自动发送下一条，草稿已保留';
+  }
+
+  void _cancelFollowUps() {
+    for (final conversation in conversations.values) {
+      _cancelFollowUp(conversation);
+    }
   }
 
   Future<String> decide(Approval approval, bool approve) async {
@@ -864,6 +1235,10 @@ class ChatController extends ChangeNotifier {
     if (error is ApiException && error.status == 401 && !_disposed) {
       expired = true;
       synchronized = false;
+      _cancelFollowUps();
+      for (final conversation in conversations.values) {
+        conversation._reactions.clear();
+      }
       _notificationApi?.close();
     }
   }
@@ -875,6 +1250,7 @@ class ChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _cancelFollowUps();
     _reconnect?.cancel();
     final transport = _notificationApi;
     _notificationApi = null;

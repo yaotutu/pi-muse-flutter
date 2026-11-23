@@ -155,6 +155,19 @@ void main() {
         final post = await api.post('/api/session', {'accessKey': '测试'});
         expect(post['method'], 'POST');
         expect(jsonDecode(post['body'] as String), {'accessKey': '测试'});
+
+        const path = '/api/sessions/main/messages/reply/feedback/reaction';
+        final put = await api.put(path, {
+          'piSessionId': 'history',
+          'reaction': null,
+        });
+        expect(put['method'], 'PUT');
+        expect(put['path'], path);
+        expect(put['auth'], 'Bearer test-token');
+        expect(jsonDecode(put['body'] as String), {
+          'piSessionId': 'history',
+          'reaction': null,
+        });
       },
     );
 

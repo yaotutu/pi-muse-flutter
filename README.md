@@ -4,7 +4,13 @@
 
 这是独立的 Flutter Android 客户端预览，不需要检出或运行 React Native 工程。应用使用独立包名 `com.pimuse.pi_muse_flutter`，通过 HTTP/SSE 连接 Pi Muse 服务端。打开后填写服务端根地址及访问密钥，点击「连接」。访问密钥用于换取 Session Token。连接成功后，可从主聊天进入会话列表、创建或切换会话。
 
-点左上角打开侧边栏，选择会话或点「新建会话」。顶部居中显示当前会话名称。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。已保存的回复可复制。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
+点左上角打开侧边栏，选择会话或点「新建会话」。顶部居中显示当前会话名称。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。回复实时显示。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
+
+### 操作消息
+
+打开已保存消息旁的「消息操作」，可以复制全文或引用普通聊天消息。助手回复下方保留一键复制。可反馈的消息能点赞或标为不喜欢，再点当前选项即可撤销。结果不明时，从同一菜单选择「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
+
+本机正在生成回复时，输入框右侧显示「停止回复」。输入下一条或添加附件后，按钮变为「停止并发送」。客户端在确认上一轮停止并同步历史后发送下一条。如果无法确认，下一条保留在输入框。若上一条也未保存，可通过「切换未发送草稿」找回两条内容。
 
 ### 管理会话
 
@@ -44,7 +50,13 @@ flutter run -d <android-device-id>
 
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, use the main chat to create or switch sessions.
 
-Open the drawer with the top-left menu button to switch sessions or tap **新建会话** (New session). The centered title displays the current session name. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. You can copy saved replies. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+Open the drawer with the top-left menu button to switch sessions or tap **新建会话** (New session). The centered title displays the current session name. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. Replies stream into the conversation. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+
+### Message actions
+
+Open **消息操作** (Message actions) on a saved message to copy its full text or quote an ordinary chat message. Assistant replies also have a one-tap copy button. You can like or dislike eligible messages. Select the current reaction again to clear it. If the result is uncertain, use **核对反馈状态** (Check feedback status) in the same menu. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
+
+During a reply started on this device, the composer shows **停止回复** (Stop reply). Enter a new message or add an attachment to switch to **停止并发送** (Stop and send). The app sends the next message after it confirms the stop and syncs history. If it cannot confirm the stop, the next message stays in the composer. If the first message was also unsaved, **切换未发送草稿** (Switch unsent drafts) lets you recover both.
 
 ### Manage conversations
 

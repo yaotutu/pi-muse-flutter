@@ -5,30 +5,111 @@ import 'package:material_ui/material_ui.dart';
 
 import 'chat.dart';
 import 'chat_attachment_view.dart';
-import 'visible_text.dart';
+
+enum _MessageAction { copy, quote, like, dislike, verify }
 
 class ChatMessageView extends StatelessWidget {
   const ChatMessageView({
     super.key,
     required this.message,
     this.confirmed = true,
+    this.onQuote,
+    this.onReaction,
+    this.reactionState,
   });
 
   final ChatMessage message;
 
   // 已确认的消息已存在于服务端历史。发送标记只表示已发送。
   final bool confirmed;
+  final VoidCallback? onQuote;
+  final ValueChanged<MessageReaction?>? onReaction;
+  final ReactionRequestState? reactionState;
+
+  Future<void> _copy(BuildContext context, String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (context.mounted) {
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text('已复制')));
+    }
+  }
+
+  Widget? _actions(BuildContext context, String text, bool hasText) {
+    if (!confirmed) return null;
+    final feedback = message.feedbackAvailable;
+    if (!hasText && !feedback) return null;
+    return PopupMenuButton<_MessageAction>(
+      tooltip: '消息操作',
+      icon: const Icon(Icons.more_horiz, size: 20),
+      onSelected: (action) {
+        switch (action) {
+          case _MessageAction.copy:
+            _copy(context, text);
+          case _MessageAction.quote:
+            onQuote?.call();
+          case _MessageAction.like:
+            onReaction?.call(MessageReaction.like);
+          case _MessageAction.dislike:
+            onReaction?.call(MessageReaction.dislike);
+          case _MessageAction.verify:
+            onReaction?.call(null);
+        }
+      },
+      itemBuilder: (_) => [
+        if (hasText)
+          const PopupMenuItem(value: _MessageAction.copy, child: Text('复制全文')),
+        if (message.canQuote)
+          PopupMenuItem(
+            value: _MessageAction.quote,
+            enabled: onQuote != null,
+            child: const Text('引用回复'),
+          ),
+        if (feedback) ...[
+          if (hasText) const PopupMenuDivider(),
+          CheckedPopupMenuItem(
+            value: _MessageAction.like,
+            enabled: onReaction != null && reactionState == null,
+            checked: message.reaction == MessageReaction.like,
+            child: Text(
+              message.reaction == MessageReaction.like ? '撤销点赞' : '点赞',
+            ),
+          ),
+          CheckedPopupMenuItem(
+            value: _MessageAction.dislike,
+            enabled: onReaction != null && reactionState == null,
+            checked: message.reaction == MessageReaction.dislike,
+            child: Text(
+              message.reaction == MessageReaction.dislike ? '撤销不喜欢' : '不喜欢',
+            ),
+          ),
+          if (reactionState == ReactionRequestState.unconfirmed)
+            PopupMenuItem(
+              value: _MessageAction.verify,
+              enabled: onReaction != null,
+              child: const Text('核对反馈状态'),
+            ),
+          if (reactionState == ReactionRequestState.busy)
+            const PopupMenuItem<_MessageAction>(
+              enabled: false,
+              child: Text('正在处理反馈…'),
+            ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final user = message.role == 'user';
-    final text = user ? message.text : visibleAssistantText(message.text);
+    final text = message.visibleText;
     final hasText = text.trim().isNotEmpty;
     if (!hasText && message.attachments.isEmpty) {
       return const SizedBox.shrink();
     }
+    final actions = _actions(context, text, hasText);
 
     final sentAt = message.sentAt?.toLocal();
     final time = sentAt == null
@@ -104,7 +185,7 @@ class ChatMessageView extends StatelessWidget {
               ),
               if (time != null || confirmed)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 4),
+                  padding: const EdgeInsets.only(right: 4),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -120,6 +201,7 @@ class ChatMessageView extends StatelessWidget {
                           ),
                         ),
                       ],
+                      ?actions,
                     ],
                   ),
                 ),
@@ -177,7 +259,7 @@ class ChatMessageView extends StatelessWidget {
             bulletBuilder: (bullet) =>
                 _buildListMarker(bullet, replyStyles, textScaler),
           ),
-          if (time != null || showCopy) ...[
+          if (time != null || showCopy || actions != null) ...[
             const SizedBox(height: 16),
             Divider(height: 1, color: colors.surfaceContainerLow),
             Padding(
@@ -190,15 +272,9 @@ class ChatMessageView extends StatelessWidget {
                       tooltip: '复制',
                       color: colors.outline,
                       icon: const Icon(Icons.content_copy_outlined, size: 18),
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: text));
-                        if (context.mounted) {
-                          ScaffoldMessenger.maybeOf(
-                            context,
-                          )?.showSnackBar(const SnackBar(content: Text('已复制')));
-                        }
-                      },
+                      onPressed: () => _copy(context, text),
                     ),
+                  ?actions,
                 ],
               ),
             ),

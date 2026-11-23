@@ -9,9 +9,18 @@ import 'package:pi_muse_flutter/src/chat_attachment.dart';
 
 class _Transport implements MuseApi {
   final stream = StreamController<SseFrame>();
-  final runStream = StreamController<SseFrame>();
+  final runStreams = [StreamController<SseFrame>()];
+  StreamController<SseFrame> get runStream => runStreams.first;
   final submitted = <Json>[];
   final history = <String, List<Json>>{};
+  final bindings = <String, String>{};
+  final revisions = <String, String>{};
+  final stops = <Json>[];
+  final feedbackWrites = <(String, Json)>[];
+  Future<Json> Function(String id)? readHistory;
+  Future<Json> Function()? stopResult;
+  Future<Json> Function()? feedbackWrite;
+  Future<Json> Function(String path, Map<String, String>? query)? feedbackRead;
   final directory = <String, String>{mainSession: '默认会话', topicId: '专题会话'};
   final sessionWrites = <(String, String, Json)>[];
   Future<Json> Function()? readDirectory;
@@ -24,7 +33,7 @@ class _Transport implements MuseApi {
   @override
   Stream<SseFrame> run(Json body) {
     submitted.add(body);
-    return runStream.stream;
+    return runStreams[submitted.length - 1].stream;
   }
 
   @override
@@ -34,17 +43,32 @@ class _Transport implements MuseApi {
     }
     if (path.endsWith('/schedules')) return _schedules();
     if (path == '/api/runs/status') throw const ApiException(404);
+    if (path.endsWith('/feedback')) return await feedbackRead!(path, query);
     final id = query!['sessionId']!;
-    return {
-      'sessionId': id,
-      'piSessionId': '$id-history',
-      'revision': 'empty',
-      'messages': history[id] ?? <Json>[],
-    };
+    return readHistory == null ? historyData(id) : await readHistory!(id);
+  }
+
+  Json historyData(String id) => {
+    'sessionId': id,
+    'piSessionId': bindings[id] ?? '$id-history',
+    'revision': revisions[id] ?? 'empty',
+    'messages': history[id] ?? <Json>[],
+  };
+
+  @override
+  Future<Json> post(String path, Json body) async {
+    expect(path, '/api/conversation/stop');
+    stops.add(body);
+    return stopResult == null ? {'stopped': true} : await stopResult!();
   }
 
   @override
-  Future<Json> post(String path, Json body) async => {'stopped': true};
+  Future<Json> put(String path, Json body) async {
+    feedbackWrites.add((path, body));
+    return feedbackWrite == null
+        ? {'reaction': body['reaction'], 'comments': []}
+        : await feedbackWrite!();
+  }
 
   Json directoryData() => {
     'sessions': [
@@ -92,7 +116,287 @@ Json _schedules() => {
 Future<void> _tick() => Future<void>.delayed(Duration.zero);
 const topicId = 'e1da5342-a4cc-42db-af18-fb9f3f2cf921';
 
+Json _reply(Object? reaction) => {
+  'id': 'answer',
+  'role': 'assistant',
+  'content': '<think>Private reasoning</think>One\nTwo',
+  'metadata': {'source': 'chat', 'feedbackAvailable': true},
+  'feedback': {'reaction': reaction, 'comments': []},
+};
+
+const _ready = SseFrame(
+  event: 'ready',
+  data: {
+    'instanceId': 'test-instance',
+    'sessionStatuses': [],
+    'pendingApprovals': [],
+  },
+);
+
+SseFrame _status(Json submitted, int revision, String status) => SseFrame(
+  event: 'session_status_updated',
+  data: {
+    'instanceId': 'test-instance',
+    'sessionId': submitted['sessionId'],
+    'runId': submitted['runId'],
+    'revision': revision,
+    'status': status,
+  },
+);
+
 void main() {
+  test(
+    'feedback keeps its confirmed state until an ambiguous write is checked',
+    () async {
+      final api = _Transport()..history[mainSession] = [_reply('like')];
+      final chat = ChatController(api, () => api)..synchronized = true;
+      addTearDown(chat.dispose);
+      final conversation = chat.active;
+      await chat.refresh(conversation);
+      final binding = conversation.binding!;
+      final receipt = Completer<Json>();
+      api.feedbackWrite = () => receipt.future;
+      final changing = chat.changeReaction(
+        conversation,
+        binding,
+        'answer',
+        MessageReaction.dislike,
+      );
+      final failure = expectLater(changing, throwsA(isA<ApiException>()));
+      expect(conversation.reactionState('answer'), ReactionRequestState.busy);
+      await chat.changeReaction(
+        conversation,
+        binding,
+        'answer',
+        MessageReaction.like,
+      );
+      receipt.completeError(const ApiException(408));
+      await failure;
+      expect(conversation.history.single.reaction, MessageReaction.like);
+      expect(
+        conversation.reactionState('answer'),
+        ReactionRequestState.unconfirmed,
+      );
+      await chat.changeReaction(
+        conversation,
+        binding,
+        'answer',
+        MessageReaction.dislike,
+      );
+      expect(api.feedbackWrites, hasLength(1));
+      api.feedbackRead = (path, query) async {
+        expect(path, '/api/sessions/main/messages/answer/feedback');
+        expect(query, {'piSessionId': binding});
+        return {'reaction': 'dislike', 'comments': []};
+      };
+      await chat.changeReaction(conversation, binding, 'answer', null);
+      expect(conversation.history.single.reaction, MessageReaction.dislike);
+      api.feedbackWrite = null;
+      await chat.changeReaction(
+        conversation,
+        binding,
+        'answer',
+        MessageReaction.dislike,
+      );
+      final (path, body) = api.feedbackWrites.last;
+      expect(path, '/api/sessions/main/messages/answer/feedback/reaction');
+      expect(body, {'piSessionId': binding, 'reaction': null});
+      expect(conversation.history.single.reaction, isNull);
+      expect(conversation.reactionState('answer'), isNull);
+    },
+  );
+
+  test(
+    'feedback receipt invalidates older history but yields to a fresh read',
+    () async {
+      final api = _Transport()..history[mainSession] = [_reply(null)];
+      final chat = ChatController(api, () => api)..synchronized = true;
+      addTearDown(chat.dispose);
+      final conversation = chat.active;
+      await chat.refresh(conversation);
+      final stale = Completer<Json>();
+      final before = api.historyData(mainSession);
+      var reads = 0;
+      api.readHistory = (id) async =>
+          ++reads == 1 ? stale.future : api.historyData(id);
+      final refreshing = chat.refresh(conversation);
+      await chat.changeReaction(
+        conversation,
+        conversation.binding!,
+        'answer',
+        MessageReaction.like,
+      );
+      expect(conversation.history.single.reaction, MessageReaction.like);
+      api.history[mainSession] = [_reply('dislike')];
+      stale.complete(before);
+      await refreshing;
+      expect(reads, 2);
+      expect(conversation.history.single.reaction, MessageReaction.dislike);
+    },
+  );
+
+  test(
+    'quotes keep visible lines and a failed send preserves both drafts',
+    () async {
+      final api = _Transport()..history[mainSession] = [_reply(null)];
+      final chat = ChatController(
+        api,
+        () => api,
+        attachmentPicker: ({required maxFiles, required maxBytes}) async => [
+          PickedAttachment('memo.txt', 'text/plain', utf8.encode('notes')),
+        ],
+      )..synchronized = true;
+      addTearDown(chat.dispose);
+      final conversation = chat.active;
+      await chat.refresh(conversation);
+      expect(
+        chat.quoteMessage(conversation, conversation.binding, 'answer'),
+        true,
+      );
+      await chat.send();
+      expect(api.submitted, isEmpty);
+      chat.setDraft('x' * maxChatMessageLength);
+      await chat.send();
+      expect(api.submitted, isEmpty);
+      expect(conversation.quote!.excerpt, 'One\nTwo');
+      await chat.chooseAttachments();
+      final attachment = conversation.draftAttachments.single;
+      chat.setDraft('Follow up');
+      final sending = chat.send();
+      expect(api.submitted.single['message'], {
+        'id': conversation.submission!.message.id,
+        'content': '> 助手回复\n> One\n> Two\n\nFollow up',
+        'attachments': [attachment.toRequest()],
+      });
+      chat.setDraft('Newer draft');
+      final followUp = chat.stopAndSend();
+      api.runStream.add(
+        const SseFrame(data: {'type': 'RUN_ERROR', 'code': 'STOPPED'}),
+      );
+      await api.runStream.close();
+      await sending;
+      await followUp;
+      expect(api.submitted, hasLength(1));
+      expect(conversation.draft, 'Newer draft');
+      expect(conversation.hasRecoveredDraft, true);
+      chat.recoverDraft();
+      expect(conversation.draft, 'Follow up');
+      expect(conversation.quote!.excerpt, 'One\nTwo');
+      expect(conversation.draftAttachments.single, same(attachment));
+      chat.recoverDraft();
+      expect(conversation.draft, 'Newer draft');
+      expect(conversation.quote, isNull);
+    },
+  );
+
+  for (final stopFirst in [true, false]) {
+    test(
+      'follow-up uses the original session and a fresh revision (stop first: $stopFirst)',
+      () async {
+        final api = _Transport();
+        final events = _Transport();
+        final secondRun = StreamController<SseFrame>();
+        api.runStreams.add(secondRun);
+        final receipt = Completer<Json>();
+        api.stopResult = () => receipt.future;
+        final chat = ChatController(api, () => events)..start();
+        addTearDown(chat.dispose);
+        events.stream.add(_ready);
+        await _tick();
+        chat.setDraft('First message');
+        final first = chat.send();
+        final submitted = api.submitted.single;
+        events.stream.add(_status(submitted, 1, 'running'));
+        await _tick();
+        chat.setDraft('Second message');
+        final second = chat.stopAndSend();
+        await chat.stopAndSend();
+        expect(api.stops.single, {
+          'sessionId': mainSession,
+          'runId': submitted['runId'],
+        });
+        chat.select(topicId);
+        chat.setDraft('Other session draft');
+        if (stopFirst) receipt.complete({'stopped': true});
+        api.history[mainSession] = [
+          {...(submitted['message'] as Json), 'role': 'user'},
+        ];
+        api.revisions[mainSession] = 'after-first';
+        // EOF 和已经保存的消息本身不足以确认运行已结束。
+        await api.runStream.close();
+        await first;
+        await _tick();
+        expect(api.submitted, hasLength(1));
+        events.stream.add(_status(submitted, 2, 'cancelled'));
+        await _tick();
+        if (!stopFirst) {
+          expect(api.submitted, hasLength(1));
+          receipt.complete({'stopped': true});
+          await _tick();
+        }
+        expect(api.submitted, hasLength(2));
+        final next = api.submitted.last;
+        expect(next['sessionId'], mainSession);
+        expect(next['expectedRevision'], 'after-first');
+        expect((next['message'] as Json)['content'], 'Second message');
+        expect(chat.active.draft, 'Other session draft');
+        await secondRun.close();
+        await second;
+        await events.stream.close();
+      },
+    );
+  }
+
+  for (final outcome in ['false receipt', 'disconnect', 'reset', 'delete']) {
+    test('follow-up is cancelled on $outcome', () async {
+      final api = _Transport();
+      final events = _Transport();
+      final receipt = Completer<Json>();
+      api.stopResult = () => receipt.future;
+      final chat = ChatController(api, () => events)..start();
+      addTearDown(chat.dispose);
+      events.stream.add(_ready);
+      await _tick();
+      chat.select(topicId);
+      final conversation = chat.active;
+      await chat.refresh(conversation);
+      chat.setDraft('First message');
+      final first = chat.send();
+      final submitted = api.submitted.single;
+      chat.setDraft('Second message');
+      final second = chat.stopAndSend();
+      api.history[topicId] = [
+        {...(submitted['message'] as Json), 'role': 'user'},
+      ];
+      if (outcome == 'disconnect') await events.stream.close();
+      if (outcome == 'delete') {
+        await chat.deleteSession(
+          topicId,
+          SessionSchedules.fromJson(_schedules()),
+          SessionScheduleDisposition.delete,
+        );
+      }
+      if (outcome == 'reset') {
+        api.bindings[topicId] = 'reset-binding';
+        api.history[topicId] = [];
+      }
+      receipt.complete({'stopped': outcome != 'false receipt'});
+      api.runStream.add(
+        const SseFrame(data: {'type': 'RUN_ERROR', 'code': 'STOPPED'}),
+      );
+      await api.runStream.close();
+      await first;
+      await second;
+      await _tick();
+      expect(api.submitted, hasLength(1));
+      expect(conversation.waitingToSend, false);
+      if (outcome != 'delete') {
+        expect(conversation.draft, outcome == 'reset' ? '' : 'Second message');
+      }
+      if (outcome != 'disconnect') await events.stream.close();
+    });
+  }
+
   test('rename keeps history and draft and rejects changes to main', () async {
     final api = _Transport();
     final chat = ChatController(api, () => api)..synchronized = true;
@@ -294,7 +598,15 @@ void main() {
         {...(submitted['message'] as Json), 'role': 'user'},
         {'id': 'assistant', 'role': 'assistant', 'content': 'Answer'},
       ];
-      api.runStream.add(const SseFrame(data: {'type': 'RUN_FINISHED'}));
+      api.runStream.add(
+        SseFrame(
+          data: {
+            'type': 'RUN_FINISHED',
+            'sessionId': mainSession,
+            'runId': submitted['runId'],
+          },
+        ),
+      );
       await api.runStream.close();
       await completed;
       await _tick();
