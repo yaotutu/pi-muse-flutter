@@ -138,40 +138,52 @@ void main() {
       ),
     );
 
-    Future<void> menu(String id, String label) async {
-      final button = find.descendant(
-        of: find.byKey(ValueKey(id)),
-        matching: find.byTooltip('消息操作'),
-      );
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-      final item = find.ancestor(
-        of: find.text(label),
-        matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
-      );
-      await tester.tap(item);
+    Finder action(String id, String label) => find.descendant(
+      of: find.byKey(ValueKey(id)),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == label,
+      ),
+    );
+
+    Future<void> tapAction(String id, String label) async {
+      await tester.tap(action(id, label));
       await tester.pumpAndSettle();
     }
 
-    await menu('question', '复制全文');
-    await tester.tap(find.byTooltip('复制'));
-    await tester.pumpAndSettle();
+    expect(find.byTooltip('消息操作'), findsNothing);
+    expect(action('question', '点赞'), findsNothing);
+    await tapAction('question', '复制');
+    await tapAction('answer', '复制');
     expect(clipboard, ['Original question', '**Visible reply**']);
     final snacks = tester.state<ScaffoldMessengerState>(
       find.byType(ScaffoldMessenger),
     );
     snacks.clearSnackBars();
     await tester.pumpAndSettle();
-    await menu('answer', '点赞');
-    await menu('answer', '撤销点赞');
+    await tapAction('answer', '点赞');
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销点赞')).isSelected,
+      true,
+    );
+    await tapAction('answer', '不喜欢');
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销不喜欢')).isSelected,
+      true,
+    );
+    await tapAction('answer', '撤销不喜欢');
+    expect(
+      tester.widget<IconButton>(action('answer', '不喜欢')).isSelected,
+      false,
+    );
     expect(api.writes, [
       {'piSessionId': 'binding', 'reaction': 'like'},
+      {'piSessionId': 'binding', 'reaction': 'dislike'},
       {'piSessionId': 'binding', 'reaction': null},
     ]);
 
     final composer = find.byType(TextField);
     await tester.enterText(composer, 'Draft question');
-    await menu('answer', '引用回复');
+    await tapAction('answer', '引用回复');
     expect(find.text('助手回复'), findsOneWidget);
     expect(find.text('**Visible reply**'), findsOneWidget);
     expect(

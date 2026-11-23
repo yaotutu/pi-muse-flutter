@@ -6,8 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 
-enum _MessageAction { copy, quote, like, dislike, verify }
-
 class ChatMessageView extends StatelessWidget {
   const ChatMessageView({
     super.key,
@@ -35,68 +33,67 @@ class ChatMessageView extends StatelessWidget {
     }
   }
 
-  Widget? _actions(BuildContext context, String text, bool hasText) {
-    if (!confirmed) return null;
-    final feedback = message.feedbackAvailable;
-    if (!hasText && !feedback) return null;
-    return PopupMenuButton<_MessageAction>(
-      tooltip: '消息操作',
-      icon: const Icon(Icons.more_horiz, size: 20),
-      onSelected: (action) {
-        switch (action) {
-          case _MessageAction.copy:
-            _copy(context, text);
-          case _MessageAction.quote:
-            onQuote?.call();
-          case _MessageAction.like:
-            onReaction?.call(MessageReaction.like);
-          case _MessageAction.dislike:
-            onReaction?.call(MessageReaction.dislike);
-          case _MessageAction.verify:
-            onReaction?.call(null);
-        }
-      },
-      itemBuilder: (_) => [
-        if (hasText)
-          const PopupMenuItem(value: _MessageAction.copy, child: Text('复制全文')),
-        if (message.canQuote)
-          PopupMenuItem(
-            value: _MessageAction.quote,
-            enabled: onQuote != null,
-            child: const Text('引用回复'),
+  List<Widget> _actions(BuildContext context, String text, bool hasText) {
+    if (!confirmed) return const [];
+    final colors = Theme.of(context).colorScheme;
+    final canReact = onReaction != null && reactionState == null;
+    final liked = message.reaction == MessageReaction.like;
+    final disliked = message.reaction == MessageReaction.dislike;
+    return [
+      if (hasText)
+        IconButton(
+          tooltip: '复制',
+          color: colors.onSurfaceVariant,
+          icon: const Icon(Icons.content_copy_outlined, size: 18),
+          onPressed: () => _copy(context, text),
+        ),
+      if (message.canQuote)
+        IconButton(
+          tooltip: '引用回复',
+          color: colors.onSurfaceVariant,
+          icon: const Icon(Icons.format_quote_outlined, size: 20),
+          onPressed: onQuote,
+        ),
+      if (message.feedbackAvailable) ...[
+        IconButton(
+          tooltip: liked ? '撤销点赞' : '点赞',
+          isSelected: liked,
+          color: liked ? colors.primary : colors.onSurfaceVariant,
+          icon: const Icon(Icons.thumb_up_outlined, size: 18),
+          selectedIcon: const Icon(Icons.thumb_up, size: 18),
+          onPressed: canReact ? () => onReaction!(MessageReaction.like) : null,
+        ),
+        IconButton(
+          tooltip: disliked ? '撤销不喜欢' : '不喜欢',
+          isSelected: disliked,
+          color: disliked ? colors.primary : colors.onSurfaceVariant,
+          icon: const Icon(Icons.thumb_down_outlined, size: 18),
+          selectedIcon: const Icon(Icons.thumb_down, size: 18),
+          onPressed: canReact
+              ? () => onReaction!(MessageReaction.dislike)
+              : null,
+        ),
+        if (reactionState == ReactionRequestState.unconfirmed)
+          IconButton(
+            tooltip: '核对反馈状态',
+            color: colors.onSurfaceVariant,
+            icon: const Icon(Icons.sync, size: 20),
+            onPressed: onReaction == null ? null : () => onReaction!(null),
           ),
-        if (feedback) ...[
-          if (hasText) const PopupMenuDivider(),
-          CheckedPopupMenuItem(
-            value: _MessageAction.like,
-            enabled: onReaction != null && reactionState == null,
-            checked: message.reaction == MessageReaction.like,
-            child: Text(
-              message.reaction == MessageReaction.like ? '撤销点赞' : '点赞',
+        if (reactionState == ReactionRequestState.busy)
+          Semantics(
+            label: '正在处理反馈',
+            liveRegion: true,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
           ),
-          CheckedPopupMenuItem(
-            value: _MessageAction.dislike,
-            enabled: onReaction != null && reactionState == null,
-            checked: message.reaction == MessageReaction.dislike,
-            child: Text(
-              message.reaction == MessageReaction.dislike ? '撤销不喜欢' : '不喜欢',
-            ),
-          ),
-          if (reactionState == ReactionRequestState.unconfirmed)
-            PopupMenuItem(
-              value: _MessageAction.verify,
-              enabled: onReaction != null,
-              child: const Text('核对反馈状态'),
-            ),
-          if (reactionState == ReactionRequestState.busy)
-            const PopupMenuItem<_MessageAction>(
-              enabled: false,
-              child: Text('正在处理反馈…'),
-            ),
-        ],
       ],
-    );
+    ];
   }
 
   @override
@@ -186,22 +183,28 @@ class ChatMessageView extends StatelessWidget {
               if (time != null || confirmed)
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      ?time,
-                      if (confirmed) ...[
-                        if (time != null) const SizedBox(width: 4),
-                        Tooltip(
-                          message: '已发送',
-                          child: Icon(
-                            Icons.done_all,
-                            size: 14,
-                            color: colors.primary,
-                          ),
-                        ),
-                      ],
-                      ?actions,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ?time,
+                          if (confirmed) ...[
+                            if (time != null) const SizedBox(width: 4),
+                            Tooltip(
+                              message: '已发送',
+                              child: Icon(
+                                Icons.done_all,
+                                size: 14,
+                                color: colors.primary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      ...actions,
                     ],
                   ),
                 ),
@@ -211,7 +214,6 @@ class ChatMessageView extends StatelessWidget {
       );
     }
 
-    final showCopy = confirmed && hasText;
     final body = theme.textTheme.bodyLarge!.copyWith(
       color: colors.onSurface,
       fontSize: 17,
@@ -259,22 +261,22 @@ class ChatMessageView extends StatelessWidget {
             bulletBuilder: (bullet) =>
                 _buildListMarker(bullet, replyStyles, textScaler),
           ),
-          if (time != null || showCopy || actions != null) ...[
+          if (time != null || actions.isNotEmpty) ...[
             const SizedBox(height: 16),
             Divider(height: 1, color: colors.surfaceContainerLow),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Row(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(child: time ?? const SizedBox.shrink()),
-                  if (showCopy)
-                    IconButton(
-                      tooltip: '复制',
-                      color: colors.outline,
-                      icon: const Icon(Icons.content_copy_outlined, size: 18),
-                      onPressed: () => _copy(context, text),
+                  ?time,
+                  if (actions.isNotEmpty)
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: actions,
                     ),
-                  ?actions,
                 ],
               ),
             ),

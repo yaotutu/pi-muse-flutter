@@ -244,7 +244,7 @@ class _ChatPageState extends State<ChatPage> {
       final unconfirmed =
           conversation.reactionState(id) == ReactionRequestState.unconfirmed;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(unconfirmed ? '请从消息操作核对反馈状态' : '暂时无法更新反馈')),
+        SnackBar(content: Text(unconfirmed ? '请在消息下方核对反馈状态' : '暂时无法更新反馈')),
       );
     }
   }

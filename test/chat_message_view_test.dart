@@ -335,6 +335,55 @@ void main() {
     expect(find.text('已复制'), findsOneWidget);
   });
 
+  testWidgets('inline feedback verification fits a narrow message footer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var checks = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ChatMessageView(
+              message: ChatMessage(
+                'question',
+                'user',
+                '测试消息',
+                sentAt: DateTime(2026, 11, 23, 10, 16),
+                feedbackAvailable: true,
+                reaction: MessageReaction.like,
+              ),
+              onQuote: () {},
+              reactionState: ReactionRequestState.unconfirmed,
+              onReaction: (selection) {
+                expect(selection, isNull);
+                checks++;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final like = find.widgetWithIcon(IconButton, Icons.thumb_up);
+    expect(tester.widget<IconButton>(like).isSelected, true);
+    expect(tester.widget<IconButton>(like).onPressed, isNull);
+    await tester.tap(find.byTooltip('核对反馈状态'));
+    expect(checks, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   test('chat text and action colors have readable contrast in both themes', () {
     double contrast(Color first, Color second) {
       final a = first.computeLuminance();

@@ -8,7 +8,7 @@
 
 ### 操作消息
 
-打开已保存消息旁的「消息操作」，可以复制全文或引用普通聊天消息。助手回复下方保留一键复制。可反馈的消息能点赞或标为不喜欢，再点当前选项即可撤销。结果不明时，从同一菜单选择「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
+已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞和不喜欢，点亮的按钮表示当前反馈，再点一次即可撤销。结果不明时，点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
 
 本机正在生成回复时，输入框右侧显示「停止回复」。输入下一条或添加附件后，按钮变为「停止并发送」。客户端在确认上一轮停止并同步历史后发送下一条。如果无法确认，下一条保留在输入框。若上一条也未保存，可通过「切换未发送草稿」找回两条内容。
 
@@ -54,7 +54,7 @@ Open the drawer with the top-left menu button to switch sessions or tap **新建
 
 ### Message actions
 
-Open **消息操作** (Message actions) on a saved message to copy its full text or quote an ordinary chat message. Assistant replies also have a one-tap copy button. You can like or dislike eligible messages. Select the current reaction again to clear it. If the result is uncertain, use **核对反馈状态** (Check feedback status) in the same menu. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
+Use the buttons below a saved message to copy or quote it. Eligible messages also have Like and Dislike buttons. The active reaction is highlighted. Tap it again to clear it. If the result is uncertain, tap **核对反馈状态** (Check feedback status) below the message. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
 
 During a reply started on this device, the composer shows **停止回复** (Stop reply). Enter a new message or add an attachment to switch to **停止并发送** (Stop and send). The app sends the next message after it confirms the stop and syncs history. If it cannot confirm the stop, the next message stays in the composer. If the first message was also unsaved, **切换未发送草稿** (Switch unsent drafts) lets you recover both.
 
