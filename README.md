@@ -22,7 +22,7 @@
 
 ### 设置
 
-底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」「服务器连接」或「短信同步」进入对应页面，返回时回到设置首页。
+底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」「服务器连接」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页。
 
 ### 更换配色
 
@@ -33,6 +33,19 @@
 打开「设置 → 短信同步」，开启「同步新短信」并授予 Android 接收短信权限。开启后新收到的短信原文和发件人会发送到当前连接的 Pi Muse 服务端。HTTP 连接传输时未加密。后台可继续同步，断网时短信加密保存在本机，恢复网络后继续上传。关闭同步或撤回权限会暂停接收和上传，已排队的短信会保留。
 
 页面显示待同步数量和最近一次确认服务端已接收的时间。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
+
+### 应用更新
+
+正式版启动时检查 GitHub，应用在前台期间每小时再检查一次。也可从「设置 → 应用更新」手动检查。发现新版本后自动下载 `app-release.apk`，下载中可取消。同一次运行中，取消的版本可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
+
+首次安装请从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载正式 APK。后续覆盖安装需要相同的包名和签名。若设备上装的是开发调试包，请先卸载调试包，再安装正式 APK；卸载会清除该客户端的本机数据。
+
+### 自动打包与发布
+
+- 推送到 `main` 后，[发布流程](.github/workflows/release.yml) 递增 `pubspec.yaml` 的补丁版本和 Android 构建号，例如 `0.1.0+1` 变为 `0.1.1+2`。分析、测试与签名 APK 校验成功后，流程推送版本提交及标签，上传 APK 到草稿，再公开 GitHub Release。`pubspec.yaml` 的版本字段由发布流程维护。
+- 手动运行 `release` 使用所选提交的现有版本，构建并保留 Actions APK 产物。版本提交、标签和正式发布由 `main` 的推送触发。
+- GitHub 仓库需为 `yaotutu/pi-muse-flutter`，并让手机可匿名访问其 Releases 与 APK。仓库需允许发布流程的 `GITHUB_TOKEN` 写入 `main`、标签和 Releases。
+- 发布签名复用 RN 客户端的 keystore。将 Base64 编码的 keystore、库密码、别名和密钥密码分别配置为仓库 Actions secrets `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。本地开发使用 Debug APK，发布流程要求正式签名。
 
 ### 发送附件
 
@@ -82,7 +95,7 @@ In the drawer, open **更多操作** (More actions) next to a topic session to r
 
 ### Settings
 
-Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance), **服务器连接** (Server connection), or **短信同步** (SMS sync) from the list. Back returns to Settings home.
+Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance), **服务器连接** (Server connection), **短信同步** (SMS sync), or **应用更新** (App updates) from the list. Back returns to Settings home.
 
 ### Change the color palette
 
@@ -93,6 +106,19 @@ Open **设置 → 外观** (Settings → Appearance) and choose Indigo (default)
 Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短信** (Sync new SMS messages), and grant Android permission to receive SMS. The app sends the original text and sender of new SMS messages to your connected Pi Muse server. HTTP connections transmit this data without encryption. Sync can continue in the background. While offline, the app encrypts pending messages on the device and resumes delivery when the network returns. Turning sync off or revoking permission pauses capture and uploads and keeps pending messages.
 
 The page shows how many messages are pending and when the app last confirmed that the server accepted one. If the server has paused intake, tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
+
+### App updates
+
+The release build checks GitHub at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). A new version starts downloading `app-release.apk` automatically. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
+
+For the first installation, download the signed APK from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases). Android updates require the same package ID and signing certificate. If a development debug build is installed, uninstall it before installing the release APK. Uninstalling clears the client's local data.
+
+### Automated builds and releases
+
+- A push to `main` starts the [release workflow](.github/workflows/release.yml). It increments the patch version and Android build number in `pubspec.yaml`, for example from `0.1.0+1` to `0.1.1+2`. After analysis, tests and signed APK verification succeed, it pushes the version commit and tag, uploads the APK to a draft, then publishes the GitHub Release. The workflow maintains the version field.
+- A manual `release` run builds the selected commit's current version and saves the APK as an Actions artifact. Pushes to `main` trigger version commits, tags and public releases.
+- Use `yaotutu/pi-muse-flutter` as the GitHub repository and make its Releases and APKs available to phones without authentication. Allow the release workflow's `GITHUB_TOKEN` to write to `main`, tags and Releases.
+- Release signing reuses the RN client's keystore. Configure the Base64-encoded keystore, store password, key alias and key password as Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Use the Debug APK for development. The release workflow requires release signing.
 
 ### Send attachments
 

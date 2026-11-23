@@ -7,12 +7,14 @@ import io.flutter.embedding.engine.FlutterEngine
 class MainActivity : FlutterActivity() {
     private var attachmentPicker: AttachmentPicker? = null
     private var smsSync: SmsSyncChannel? = null
+    private var appUpdate: AppUpdateChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         attachmentPicker = AttachmentPicker(this, messenger)
         smsSync = SmsSyncChannel(this, messenger)
+        appUpdate = AppUpdateChannel(this, messenger)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -20,6 +22,8 @@ class MainActivity : FlutterActivity() {
         attachmentPicker = null
         smsSync?.close()
         smsSync = null
+        appUpdate?.close()
+        appUpdate = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

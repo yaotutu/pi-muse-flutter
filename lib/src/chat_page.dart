@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'appearance.dart';
 import 'appearance_page.dart';
+import 'app_update.dart';
+import 'app_update_sheet.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
@@ -20,12 +22,14 @@ class ChatPage extends StatefulWidget {
     required this.appearance,
     required this.onConnection,
     this.connectionUsesHttp = false,
+    this.updates,
   });
 
   final ChatController chat;
   final AppearanceSettings appearance;
   final VoidCallback onConnection;
   final bool connectionUsesHttp;
+  final AppUpdateController? updates;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -209,6 +213,17 @@ class _ChatPageState extends State<ChatPage> {
                       builder: (_) => SmsSyncPage(
                         connectionUsesHttp: widget.connectionUsesHttp,
                       ),
+                    ),
+                  ),
+                ),
+              if (widget.updates case final updates?)
+                ListTile(
+                  leading: const Icon(Icons.system_update_outlined),
+                  title: const Text('应用更新'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => AppUpdateSheet(controller: updates),
                     ),
                   ),
                 ),

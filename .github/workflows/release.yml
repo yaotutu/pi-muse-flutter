@@ -1,0 +1,197 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.event_name == 'push' && 'android-release-main' || format('android-build-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Resolve source and version
+        id: source
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            node tools/bump-version.js --current >> "$GITHUB_OUTPUT"
+            echo 'mode=manual' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags origin main
+          tip=$(git rev-parse FETCH_HEAD)
+          if [[ "$tip" != "$GITHUB_SHA" ]]; then
+            # 只有本事件已经推送的版本提交可以恢复，新的源码交给其自己的发布运行。
+            if [[ $(git rev-parse "$tip^" 2>/dev/null || true) == "$GITHUB_SHA" ]] &&
+               [[ $(git show -s --format='%(trailers:key=Release-Run,valueonly)' "$tip") == "$GITHUB_RUN_ID" ]]; then
+              git checkout --detach "$tip"
+              node tools/bump-version.js --current >> "$GITHUB_OUTPUT"
+              echo 'mode=resume' >> "$GITHUB_OUTPUT"
+            else
+              echo 'A newer main push superseded this run.'
+            fi
+            exit 0
+          fi
+
+          if [[ "$BEFORE" != 0000000000000000000000000000000000000000 ]]; then
+            git diff "$BEFORE" "$GITHUB_SHA" -- pubspec.yaml > "$RUNNER_TEMP/push-pubspec.diff"
+            if grep -E '^[-+]version[[:blank:]]*:' "$RUNNER_TEMP/push-pubspec.diff"; then
+              echo 'The release workflow updates the pubspec.yaml version.' >&2
+              exit 1
+            fi
+          fi
+          node tools/bump-version.js >> "$GITHUB_OUTPUT"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --only pubspec.yaml -m 'ci: bump Android release version [skip ci]' -m "Release-Run: $GITHUB_RUN_ID"
+          echo 'mode=new' >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        if: steps.source.outputs.mode != ''
+        with:
+          flutter-version: '3.50.1'
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        if: steps.source.outputs.mode != ''
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        if: steps.source.outputs.mode != ''
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
+      - name: Check Flutter client
+        if: steps.source.outputs.mode != ''
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze
+          flutter test
+      - name: Build and verify signed APK
+        if: steps.source.outputs.mode != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ steps.source.outputs.version }}
+          VERSION_CODE: ${{ steps.source.outputs.versionCode }}
+        run: |
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.keystore"
+          trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
+          node tools/android-signing.js
+          unset ANDROID_KEYSTORE_BASE64
+          flutter build apk --release --no-pub
+
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          test -s "$apk"
+          test "$(wc -c < "$apk")" -le $((256 * 1024 * 1024))
+          build_tools="$ANDROID_HOME/build-tools/36.0.0"
+          keytool -exportcert -keystore "$ANDROID_KEYSTORE_PATH" -alias "$ANDROID_KEY_ALIAS" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD > "$RUNNER_TEMP/release-cert.der"
+          expected=$(sha256sum "$RUNNER_TEMP/release-cert.der" | cut -d ' ' -f 1)
+          "$build_tools/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/apk-signers.txt"
+          actual=$(awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print $NF }' "$RUNNER_TEMP/apk-signers.txt")
+          test "$expected" = "$actual"
+          "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          grep -F "package: name='com.pimuse.pi_muse_flutter' versionCode='$VERSION_CODE' versionName='$VERSION'" "$RUNNER_TEMP/apk-badging.txt"
+      - name: Pack verified source and tag
+        if: steps.source.outputs.mode == 'new' || steps.source.outputs.mode == 'resume'
+        env:
+          MODE: ${{ steps.source.outputs.mode }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if [[ "$MODE" == new ]]; then git tag "$tag"; fi
+          test "$(git rev-parse "refs/tags/$tag")" = "$(git rev-parse HEAD)"
+          # bundle 只携带本次已构建的提交；发布任务使用独立的写权限。
+          git bundle create "$RUNNER_TEMP/release.bundle" "refs/tags/$tag" "^$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        if: steps.source.outputs.mode != ''
+        with:
+          name: android-apk-${{ github.run_attempt }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: steps.source.outputs.mode == 'new' || steps.source.outputs.mode == 'resume'
+        with:
+          name: android-source-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release.bundle
+          if-no-files-found: error
+    outputs:
+      mode: ${{ steps.source.outputs.mode }}
+      version: ${{ steps.source.outputs.version }}
+      attempt: ${{ github.run_attempt }}
+
+  publish:
+    needs: android
+    if: needs.android.outputs.mode == 'new' || needs.android.outputs.mode == 'resume'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk-${{ needs.android.outputs.attempt }}
+          path: ${{ runner.temp }}/android-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-source-${{ needs.android.outputs.attempt }}
+          path: ${{ runner.temp }}/android-source
+      - name: Push version commit and publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.android.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          apk="$RUNNER_TEMP/android-apk/app-release.apk"
+          test -s "$apk"
+          git fetch "$RUNNER_TEMP/android-source/release.bundle" "refs/tags/$tag"
+          target=$(git rev-parse FETCH_HEAD)
+          test "$(git rev-parse "$target^")" = "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          tip=$(git rev-parse FETCH_HEAD)
+          if [[ "$tip" == "$GITHUB_SHA" ]]; then
+            git push --atomic --force-with-lease="refs/heads/main:$GITHUB_SHA" \
+              origin "$target:refs/heads/main" "$target:refs/tags/$tag"
+          elif [[ "$tip" == "$target" ]]; then
+            test "$(git ls-remote origin "refs/tags/$tag" | cut -f 1)" = "$target"
+          else
+            echo 'A newer main push superseded this release.'
+            exit 0
+          fi
+
+          if state=$(gh release view "$tag" --json isDraft --jq '.isDraft'); then
+            if [[ "$state" == false ]]; then
+              echo "$tag is already published."
+              exit 0
+            fi
+            test "$state" = true
+          else
+            gh release create "$tag" --draft --verify-tag --title "$tag" --generate-notes
+          fi
+          gh release upload "$tag" "$apk" --clobber
+          uploaded=$(gh release view "$tag" --json assets \
+            --jq '.assets[] | select(.name == "app-release.apk" and .state == "uploaded") | "\(.size) \(.digest)"')
+          digest=$(sha256sum "$apk" | cut -d ' ' -f 1)
+          test "$uploaded" = "$(wc -c < "$apk" | xargs) sha256:$digest"
+          gh release edit "$tag" --draft=false --latest

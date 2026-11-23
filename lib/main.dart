@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/api.dart';
 import 'src/appearance.dart';
+import 'src/app_update.dart';
+import 'src/app_update_sheet.dart';
 import 'src/chat.dart';
 import 'src/chat_page.dart';
 import 'src/sms_sync.dart';
@@ -33,12 +35,54 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   Uri? _address;
   String? _storageError;
   bool _loading = true;
+  final _updates = AppUpdateController();
+  final _navigator = GlobalKey<NavigatorState>();
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
+  (String, AppUpdateStatus)? _updateNotice;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    final binding = WidgetsBinding.instance;
+    binding.addObserver(this);
+    _updates.addListener(_notifyAppUpdate);
+    _updates.setForeground(binding.lifecycleState == AppLifecycleState.resumed);
     _restore();
+  }
+
+  void _notifyAppUpdate() {
+    final status = _updates.status;
+    final version = _updates.release?.version;
+    if (version == null ||
+        (status != AppUpdateStatus.downloading &&
+            status != AppUpdateStatus.permission) ||
+        _updateNotice == (version, status)) {
+      return;
+    }
+    _updateNotice = (version, status);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _updates.status != status) return;
+      final messenger = _messenger.currentState;
+      messenger?.hideCurrentSnackBar();
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(
+            status == AppUpdateStatus.permission
+                ? '已下载 $version，安装前需要授权'
+                : '发现 Pi Muse 新版本 $version',
+          ),
+          action: SnackBarAction(
+            label: '查看更新',
+            onPressed: () => _navigator.currentState?.push<void>(
+              MaterialPageRoute(
+                builder: (_) => AppUpdateSheet(controller: _updates),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _restore() async {
@@ -92,6 +136,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _updates.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       _chat?.reconnect();
       if (!_loading) unawaited(SmsSync.resume());
@@ -103,6 +148,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _appearance.dispose();
     _chat?.dispose();
+    _updates.dispose();
     super.dispose();
   }
 
@@ -116,6 +162,8 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
     final chat = _chat;
     final palette = _appearance.palette;
     return MaterialApp(
+      navigatorKey: _navigator,
+      scaffoldMessengerKey: _messenger,
       debugShowCheckedModeBanner: false,
       title: 'Pi Muse',
       locale: const Locale('zh'),
@@ -138,6 +186,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
             chat: chat,
             appearance: _appearance,
             connectionUsesHttp: _address?.scheme == 'http',
+            updates: _updates,
             onConnection: () async {
               final hasRun = chat.conversations.values.any(
                 (conversation) => conversation.submission?.running == true,

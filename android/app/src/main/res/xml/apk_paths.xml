@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 应用内更新的 APK 只允许从独占的 cache/app-updates 目录授权给系统安装器。 -->
+    <cache-path name="app_updates" path="app-updates/"/>
+</paths>
