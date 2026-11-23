@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' as flutter;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -99,6 +100,60 @@ void main() {
     expect(blocks, contains('$title\n$description'));
     expect(blocks, contains('11:45–13:00 午饭\n楼外楼就在公园边。'));
     expect(tester.widget<MarkdownBody>(markdown).data, reply);
+  });
+
+  testWidgets('ordered list numbers stay on one line at large text sizes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const reply =
+        '9. First\n10. Second\n\n'
+        'A separate list.\n\n'
+        '99. Third\n100. Fourth\n   - Nested bullet\n\n'
+        'A list with a large starting number.\n\n'
+        '999999999. Last';
+
+    for (final scaler in [TextScaler.noScaling, TextScaler.linear(2)]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: scaler),
+            child: child!,
+          ),
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: ChatMessageView(
+                message: ChatMessage('reply', 'assistant', reply),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      for (final number in ['9.', '10.', '99.', '100.', '999999999.']) {
+        final marker = find.text(number);
+        expect(marker, findsOneWidget);
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(of: marker, matching: find.byType(flutter.RichText)),
+        );
+        final boxes = paragraph.getBoxesForSelection(
+          flutter.TextSelection(baseOffset: 0, extentOffset: number.length),
+        );
+        expect(boxes, hasLength(1), reason: '$number wraps at $scaler');
+        expect(boxes.single.right, lessThanOrEqualTo(paragraph.size.width));
+      }
+      expect(
+        tester.getTopLeft(find.text('First')).dx,
+        tester.getTopLeft(find.text('Fourth')).dx,
+      );
+      expect(find.text('•'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('paragraph-sized headings keep their inline meaning', (

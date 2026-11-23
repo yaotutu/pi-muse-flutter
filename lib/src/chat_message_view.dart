@@ -136,6 +136,8 @@ class ChatMessageView extends StatelessWidget {
       height: 1.75,
       letterSpacing: 0,
     );
+    final textScaler = MediaQuery.textScalerOf(context);
+    final replyStyles = _replyStyles(body, colors, textScaler);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
       decoration: BoxDecoration(
@@ -171,11 +173,9 @@ class ChatMessageView extends StatelessWidget {
               'chat-heading-accent': _ChatHeadingAccentBuilder(),
               'pre': _ChatCodeBlockBuilder(),
             },
-            styleSheet: _replyStyles(
-              body,
-              colors,
-              MediaQuery.textScalerOf(context),
-            ),
+            styleSheet: replyStyles,
+            bulletBuilder: (bullet) =>
+                _buildListMarker(bullet, replyStyles, textScaler),
           ),
           if (time != null || showCopy) ...[
             const SizedBox(height: 16),
@@ -323,6 +323,45 @@ class _ChatCodeBlockBuilder extends MarkdownElementBuilder {
   }
 }
 
+// 编号栏对齐到三位数；更长的编号单独缩放，避免撑宽每一级列表。
+const _listMarkerSample = '888.';
+
+double _listMarkerWidth(String marker, TextStyle style, TextScaler scaler) =>
+    TextPainter.computeWidth(
+      text: TextSpan(text: marker, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    );
+
+Widget _buildListMarker(
+  MarkdownBulletParameters bullet,
+  MarkdownStyleSheet styles,
+  TextScaler scaler,
+) {
+  final style = styles.listBullet!;
+  if (bullet.style == BulletStyle.unorderedList) {
+    return Text('•', style: style, textAlign: TextAlign.center);
+  }
+  final marker = '${bullet.index + 1}.';
+  if (marker.length > _listMarkerSample.length) {
+    final ratio =
+        (styles.listIndent! - 1) / _listMarkerWidth(marker, style, scaler);
+    if (ratio < 1) {
+      final size = style.fontSize!;
+      scaler = TextScaler.linear(scaler.scale(size) / size * ratio);
+    }
+  }
+  return Text(
+    marker,
+    style: style,
+    textAlign: TextAlign.right,
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+    softWrap: false,
+    maxLines: 1,
+  );
+}
+
 MarkdownStyleSheet _replyStyles(
   TextStyle body,
   ColorScheme colors,
@@ -342,6 +381,11 @@ MarkdownStyleSheet _replyStyles(
     color: colors.onSurface,
     fontWeight: FontWeight.w600,
   );
+  final listBullet = listText.copyWith(
+    color: colors.primary,
+    fontWeight: FontWeight.w700,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
   const headingInset = EdgeInsets.only(top: 8);
   return MarkdownStyleSheet(
     p: body,
@@ -356,12 +400,13 @@ MarkdownStyleSheet _replyStyles(
     h3Padding: headingInset,
     strong: TextStyle(color: colors.primary, fontWeight: FontWeight.w600),
     blockSpacing: 16,
-    listIndent: textScaler.scale(15),
+    listIndent: _listMarkerWidth(
+      _listMarkerSample,
+      listBullet,
+      textScaler,
+    ).ceilToDouble(),
     listBulletPadding: const EdgeInsets.only(right: 6),
-    listBullet: listText.copyWith(
-      color: colors.primary,
-      fontWeight: FontWeight.w700,
-    ),
+    listBullet: listBullet,
     a: TextStyle(color: colors.primary, decoration: TextDecoration.underline),
     horizontalRuleDecoration: BoxDecoration(
       border: Border(top: BorderSide(color: colors.outlineVariant)),
