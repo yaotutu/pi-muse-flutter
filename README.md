@@ -20,6 +20,10 @@
 
 打开左侧边栏，在专题会话的「更多操作」中可重命名或删除。重命名保留历史和草稿。删除会永久移除该会话的聊天历史和反馈，确认前会显示关联的定时任务和网页监控。有任务或监控时，可选择一并删除，或保留并转到默认会话。删除当前会话后会回到默认会话。
 
+### 设置
+
+底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」或「服务器连接」进入对应页面，返回时回到设置首页。
+
 ### 更换配色
 
 打开「设置 → 外观」，在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的配色。设置仅保存在本机，浅色和深色仍自动跟随系统。
@@ -69,6 +73,10 @@ During a reply started on this device, the composer shows **停止回复** (Stop
 ### Manage conversations
 
 In the drawer, open **更多操作** (More actions) next to a topic session to rename or delete it. Renaming keeps the history and draft. Deleting permanently removes its chat history and feedback. The confirmation shows its scheduled jobs and web monitors. You can delete those too or move them to the default session. Deleting the active session returns you to the default session.
+
+### Settings
+
+Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance) or **服务器连接** (Server connection) from the list. Back returns to Settings home.
 
 ### Change the color palette
 

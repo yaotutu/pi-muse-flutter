@@ -519,14 +519,20 @@ void main() {
       (index) => ChatMessage('$index', 'user', 'Message $index'),
     );
     chat.sessions = [...chat.sessions, const SessionEntry('topic', '随手记')];
-    var openedConnection = false;
+    final navigator = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
+        navigatorKey: navigator,
         theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         home: ChatPage(
           chat: chat,
           appearance: appearance,
-          onConnection: () => openedConnection = true,
+          onConnection: () => navigator.currentState!.push<void>(
+            MaterialPageRoute(
+              builder: (_) =>
+                  Scaffold(appBar: AppBar(title: const Text('服务器连接'))),
+            ),
+          ),
         ),
       ),
     );
@@ -587,9 +593,30 @@ void main() {
     expect((destinations[2] as NavigationDestination).enabled, isFalse);
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    expect(navigator.currentState!.canPop(), isFalse);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.text('外观'), findsOneWidget);
+    expect(find.text('配色'), findsNothing);
     await tester.tap(find.text('服务器连接'));
     await tester.pumpAndSettle();
-    expect(openedConnection, isTrue);
+    expect(bottom, findsNothing);
+    expect(find.text('服务器连接'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    await tester.tap(find.text('聊天'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 0);
+    await tester.tap(find.byTooltip('打开导航菜单'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: drawer, matching: find.text('设置')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 0);
+    expect(drawer, findsNothing);
     tester.view.viewInsets = const FakeViewPadding(bottom: 340);
     await tester.pumpAndSettle();
     expect(tester.getSize(bar).height, kToolbarHeight);

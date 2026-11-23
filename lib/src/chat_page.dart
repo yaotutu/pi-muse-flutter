@@ -31,6 +31,7 @@ class _ChatPageState extends State<ChatPage> {
   final _composer = TextEditingController();
   final _focus = FocusNode();
   final _position = PageStorageBucket();
+  bool _settingsSelected = false;
   ChatController get _chat => widget.chat;
 
   @override
@@ -151,7 +152,7 @@ class _ChatPageState extends State<ChatPage> {
                 title: const Text('设置'),
                 onTap: () {
                   scaffold.closeDrawer();
-                  _openSettings();
+                  _selectDestination(3);
                 },
               ),
             ],
@@ -161,43 +162,46 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _openSettings() {
+  void _selectDestination(int index) {
+    final showSettings = index == 3;
+    if (_settingsSelected == showSettings) return;
     _focus.unfocus();
-    final onConnection = widget.onConnection;
-    final appearance = widget.appearance;
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(title: const Text('设置')),
-          body: SafeArea(
-            child: ListView(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.palette_outlined),
-                  title: const Text('外观'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => AppearancePage(settings: appearance),
-                    ),
+    setState(() => _settingsSelected = showSettings);
+  }
+
+  Widget _settingsHome(Widget navigation) => Scaffold(
+    appBar: AppBar(automaticallyImplyLeading: false, title: const Text('设置')),
+    body: SafeArea(
+      top: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('外观'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => AppearancePage(settings: widget.appearance),
                   ),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.dns_outlined),
-                  title: const Text('服务器连接'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    onConnection();
-                  },
-                ),
-              ],
-            ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: const Text('服务器连接'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: widget.onConnection,
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+    bottomNavigationBar: navigation,
+  );
 
   Future<void> _openApproval() async {
     _focus.unfocus();
@@ -306,7 +310,11 @@ class _ChatPageState extends State<ChatPage> {
             _chat.synchronized && _chat.activeApprovals.isNotEmpty;
         final pending = conversation.submission;
         final activity = hasApproval ? null : _chat.activityLabel;
-        return Scaffold(
+        final navigation = _WorkspaceNavigationBar(
+          selectedIndex: _settingsSelected ? 3 : 0,
+          onDestinationSelected: _selectDestination,
+        );
+        final chatView = Scaffold(
           drawer: Builder(builder: _buildDrawer),
           onDrawerChanged: (open) {
             // 抽屉只改变当前路由的本地历史，主动同步 Android 的返回处理状态。
@@ -350,9 +358,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ],
           ),
-          bottomNavigationBar: compact
-              ? null
-              : _ChatNavigationBar(onSettings: _openSettings),
+          bottomNavigationBar: compact ? null : navigation,
           body: SafeArea(
             top: false,
             child: Center(
@@ -718,6 +724,22 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
         );
+        return PopScope(
+          canPop: !_settingsSelected,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _settingsSelected) _selectDestination(0);
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Offstage(
+                offstage: _settingsSelected,
+                child: TickerMode(enabled: !_settingsSelected, child: chatView),
+              ),
+              if (_settingsSelected) _settingsHome(navigation),
+            ],
+          ),
+        );
       },
     );
   }
@@ -896,10 +918,14 @@ class _ChatDateLabel extends StatelessWidget {
   }
 }
 
-class _ChatNavigationBar extends StatelessWidget {
-  const _ChatNavigationBar({required this.onSettings});
+class _WorkspaceNavigationBar extends StatelessWidget {
+  const _WorkspaceNavigationBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
 
-  final VoidCallback onSettings;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -930,12 +956,15 @@ class _ChatNavigationBar extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         indicatorColor: colors.secondaryContainer,
         labelPadding: const EdgeInsets.only(top: 2),
-        onDestinationSelected: (index) {
-          if (index == 3) onSettings();
-        },
+        selectedIndex: selectedIndex,
+        onDestinationSelected: onDestinationSelected,
         // 待办和新闻先按设计稿保留位置，迁移业务后再启用。
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.chat_bubble), label: '聊天'),
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: '聊天',
+          ),
           NavigationDestination(
             icon: Icon(Icons.task_alt),
             label: '待办',
@@ -948,6 +977,7 @@ class _ChatNavigationBar extends StatelessWidget {
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
             label: '设置',
           ),
         ],

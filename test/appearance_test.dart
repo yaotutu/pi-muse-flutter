@@ -159,7 +159,11 @@ void main() {
       );
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      await tester.binding.handlePopRoute();
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        3,
+      );
+      await tester.tap(find.text('聊天'));
       await tester.pumpAndSettle();
       expect(tester.state(chatFinder), same(chatState));
       expect(tester.widget<ChatPage>(chatFinder).chat, same(chat));
