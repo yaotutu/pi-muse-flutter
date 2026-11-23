@@ -363,13 +363,13 @@ void main() {
                 sentAt: DateTime(2026, 11, 23, 10, 16),
                 feedbackAvailable: true,
                 reaction: MessageReaction.like,
+                saved: true,
               ),
               onQuote: () {},
-              reactionState: ReactionRequestState.unconfirmed,
-              onReaction: (selection) {
-                expect(selection, isNull);
-                checks++;
-              },
+              feedbackState: FeedbackRequestState.unconfirmed,
+              onReaction: (_) => fail('Unconfirmed feedback is locked'),
+              onToggleSaved: (_) => fail('Unconfirmed feedback is locked'),
+              onVerifyFeedback: () => checks++,
             ),
           ),
         ),
@@ -379,9 +379,64 @@ void main() {
     final like = find.widgetWithIcon(IconButton, Icons.thumb_up);
     expect(tester.widget<IconButton>(like).isSelected, true);
     expect(tester.widget<IconButton>(like).onPressed, isNull);
+    final bookmark = find.widgetWithIcon(IconButton, Icons.bookmark);
+    expect(tester.widget<IconButton>(bookmark).isSelected, true);
+    expect(tester.widget<IconButton>(bookmark).onPressed, isNull);
     await tester.tap(find.byTooltip('核对反馈状态'));
     expect(checks, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('only confirmed eligible messages can be bookmarked', (
+    tester,
+  ) async {
+    final changes = <bool>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              ChatMessageView(
+                message: const ChatMessage(
+                  'execution',
+                  'assistant',
+                  '<think>Hidden</think>',
+                  feedbackAvailable: true,
+                ),
+                onToggleSaved: changes.add,
+              ),
+              ChatMessageView(
+                message: const ChatMessage(
+                  'notification',
+                  'assistant',
+                  'Notification',
+                  source: 'notification',
+                  feedbackAvailable: true,
+                  saved: true,
+                ),
+                onToggleSaved: changes.add,
+              ),
+              ChatMessageView(
+                message: const ChatMessage(
+                  'pending',
+                  'assistant',
+                  'Generating',
+                  feedbackAvailable: true,
+                ),
+                confirmed: false,
+                onToggleSaved: changes.add,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Hidden'), findsNothing);
+    expect(find.text('无可显示的正文'), findsOneWidget);
+    await tester.tap(find.byTooltip('收藏'));
+    await tester.tap(find.byTooltip('取消收藏'));
+    expect(changes, [true, false]);
   });
 
   test('chat text and action colors have readable contrast in both themes', () {

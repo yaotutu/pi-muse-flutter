@@ -15,13 +15,18 @@ const _followUpTimeout = Duration(seconds: 15);
 
 enum MessageReaction { like, dislike }
 
-enum ReactionRequestState { busy, unconfirmed }
+enum FeedbackRequestState { busy, unconfirmed }
 
 MessageReaction? _readReaction(Json feedback) => switch (feedback['reaction']) {
   'like' => MessageReaction.like,
   'dislike' => MessageReaction.dislike,
   null when feedback.containsKey('reaction') => null,
   _ => throw const FormatException('Invalid message reaction'),
+};
+
+bool _readSaved(Json feedback) => switch (feedback['saved']) {
+  final bool saved => saved,
+  _ => throw const FormatException('Invalid message saved state'),
 };
 
 class ChatMessage {
@@ -34,6 +39,7 @@ class ChatMessage {
     this.source,
     this.feedbackAvailable = false,
     this.reaction,
+    this.saved = false,
   });
 
   factory ChatMessage.fromJson(Json json) {
@@ -50,6 +56,7 @@ class ChatMessage {
       source: metadata?['source'] as String?,
       feedbackAvailable: feedbackAvailable,
       reaction: feedbackAvailable ? _readReaction(feedback) : null,
+      saved: feedbackAvailable && _readSaved(feedback),
       attachments:
           (json['attachments'] as List?)
               ?.cast<Json>()
@@ -67,6 +74,7 @@ class ChatMessage {
   final String? source;
   final bool feedbackAvailable;
   final MessageReaction? reaction;
+  final bool saved;
 
   String get visibleText =>
       role == 'assistant' ? visibleAssistantText(text) : text;
@@ -75,16 +83,18 @@ class ChatMessage {
       (role == 'user' || role == 'assistant') &&
       visibleText.trim().isNotEmpty;
 
-  ChatMessage _withReaction(MessageReaction? value) => ChatMessage(
-    id,
-    role,
-    text,
-    attachments: attachments,
-    sentAt: sentAt,
-    source: source,
-    feedbackAvailable: feedbackAvailable,
-    reaction: value,
-  );
+  ChatMessage _withFeedback(MessageReaction? reaction, bool saved) =>
+      ChatMessage(
+        id,
+        role,
+        text,
+        attachments: attachments,
+        sentAt: sentAt,
+        source: source,
+        feedbackAvailable: feedbackAvailable,
+        reaction: reaction,
+        saved: saved,
+      );
 }
 
 class MessageQuote {
@@ -231,13 +241,13 @@ class Conversation {
   List<DraftAttachment> draftAttachments = const [];
   MessageQuote? quote;
   final _recoveredDrafts = <_Draft>[];
-  final _reactions = <String, ReactionRequestState>{};
+  final _feedbackRequests = <String, FeedbackRequestState>{};
   _FollowUp? _followUp;
 
   bool get waitingToSend => _followUp != null;
   bool get canEditDraft => !waitingToSend && (submission?.running ?? true);
   bool get hasRecoveredDraft => _recoveredDrafts.isNotEmpty;
-  ReactionRequestState? reactionState(String id) => _reactions[id];
+  FeedbackRequestState? feedbackState(String id) => _feedbackRequests[id];
 
   _Draft get _draft =>
       (text: draft, quote: quote, attachments: draftAttachments);
@@ -359,7 +369,7 @@ class ChatController extends ChangeNotifier {
 
   bool get canSend => !active.waitingToSend && _canSend(active);
 
-  bool canReact(Conversation conversation) =>
+  bool canChangeFeedback(Conversation conversation) =>
       _owns(conversation) &&
       synchronized &&
       !expired &&
@@ -869,7 +879,7 @@ class ChatController extends ChangeNotifier {
           _clearFollowUp(conversation);
           conversation._clearDraft();
           conversation._recoveredDrafts.clear();
-          conversation._reactions.clear();
+          conversation._feedbackRequests.clear();
           conversation.attachmentError = null;
           conversation.error = null;
         }
@@ -931,17 +941,38 @@ class ChatController extends ChangeNotifier {
     Conversation conversation,
     String binding,
     String id,
+    MessageReaction selection,
+  ) => _changeFeedback(conversation, binding, id, selection: selection);
+
+  Future<void> changeSaved(
+    Conversation conversation,
+    String binding,
+    String id,
+    bool saved,
+  ) => _changeFeedback(conversation, binding, id, saved: saved);
+
+  Future<void> verifyFeedback(
+    Conversation conversation,
+    String binding,
+    String id,
+  ) => _changeFeedback(conversation, binding, id);
+
+  Future<void> _changeFeedback(
+    Conversation conversation,
+    String binding,
+    String id, {
     MessageReaction? selection,
-  ) async {
+    bool? saved,
+  }) async {
     final message = _savedMessage(conversation, id);
-    final state = conversation.reactionState(id);
-    final verifying = selection == null;
-    if (!canReact(conversation) ||
+    final state = conversation.feedbackState(id);
+    final verifying = selection == null && saved == null;
+    if (!canChangeFeedback(conversation) ||
         conversation.binding != binding ||
         message == null ||
         !message.feedbackAvailable ||
         (verifying
-            ? state != ReactionRequestState.unconfirmed
+            ? state != FeedbackRequestState.unconfirmed
             : state != null)) {
       return;
     }
@@ -952,40 +983,49 @@ class ChatController extends ChangeNotifier {
         !conversation.missing &&
         conversation.binding == binding &&
         !expired;
-    conversation._reactions[id] = ReactionRequestState.busy;
+    conversation._feedbackRequests[id] = FeedbackRequestState.busy;
     _changed();
     try {
-      final response = selection == null
-          ? await api.get(path, query: {'piSessionId': binding})
-          : await api.put('$path/reaction', {
-              'piSessionId': binding,
-              'reaction': selection == message.reaction ? null : selection.name,
-            });
+      final Json response;
+      if (saved != null) {
+        response = await api.put('$path/saved', {
+          'piSessionId': binding,
+          'saved': saved,
+        });
+      } else if (selection != null) {
+        response = await api.put('$path/reaction', {
+          'piSessionId': binding,
+          'reaction': selection == message.reaction ? null : selection.name,
+        });
+      } else {
+        response = await api.get(path, query: {'piSessionId': binding});
+      }
+      if (!stillCurrent()) return;
       if (response['comments'] is! List) throw const FormatException();
       final reaction = _readReaction(response);
-      if (!stillCurrent() || expired) return;
-      // 丢弃写入前已开始的历史读取，避免旧反应重新覆盖按钮。
+      final confirmedSaved = _readSaved(response);
+      // 丢弃反馈确认前已开始的历史读取，避免旧反馈重新覆盖按钮。
       if (conversation.read != null) conversation.dirty = true;
       conversation.history = [
-        for (final saved in conversation.history)
-          saved.id == id ? saved._withReaction(reaction) : saved,
+        for (final item in conversation.history)
+          item.id == id ? item._withFeedback(reaction, confirmedSaved) : item,
       ];
-      conversation._reactions.remove(id);
+      conversation._feedbackRequests.remove(id);
     } catch (error) {
       _checkAuth(error);
       if (!stillCurrent()) return;
       if (error is ApiException &&
           (error.status == 404 || error.status == 409)) {
-        conversation._reactions.remove(id);
-        unawaited(refresh(conversation));
+        await refresh(conversation);
+        if (stillCurrent()) conversation._feedbackRequests.remove(id);
       } else if (verifying ||
           error is! ApiException ||
           error.status == 0 ||
           error.status == 408 ||
           error.status >= 500) {
-        conversation._reactions[id] = ReactionRequestState.unconfirmed;
+        conversation._feedbackRequests[id] = FeedbackRequestState.unconfirmed;
       } else {
-        conversation._reactions.remove(id);
+        conversation._feedbackRequests.remove(id);
       }
       rethrow;
     } finally {
@@ -1354,7 +1394,7 @@ class ChatController extends ChangeNotifier {
       synchronized = false;
       _cancelFollowUps();
       for (final conversation in conversations.values) {
-        conversation._reactions.clear();
+        conversation._feedbackRequests.clear();
       }
       _notificationApi?.close();
     }

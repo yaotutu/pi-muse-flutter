@@ -13,7 +13,9 @@ class ChatMessageView extends StatelessWidget {
     this.confirmed = true,
     this.onQuote,
     this.onReaction,
-    this.reactionState,
+    this.onToggleSaved,
+    this.onVerifyFeedback,
+    this.feedbackState,
   });
 
   final ChatMessage message;
@@ -21,8 +23,10 @@ class ChatMessageView extends StatelessWidget {
   // 已确认的消息已存在于服务端历史。发送标记只表示已发送。
   final bool confirmed;
   final VoidCallback? onQuote;
-  final ValueChanged<MessageReaction?>? onReaction;
-  final ReactionRequestState? reactionState;
+  final ValueChanged<MessageReaction>? onReaction;
+  final ValueChanged<bool>? onToggleSaved;
+  final VoidCallback? onVerifyFeedback;
+  final FeedbackRequestState? feedbackState;
 
   Future<void> _copy(BuildContext context, String text) async {
     await Clipboard.setData(ClipboardData(text: text));
@@ -36,7 +40,9 @@ class ChatMessageView extends StatelessWidget {
   List<Widget> _actions(BuildContext context, String text, bool hasText) {
     if (!confirmed) return const [];
     final colors = Theme.of(context).colorScheme;
-    final canReact = onReaction != null && reactionState == null;
+    final canChangeFeedback = feedbackState == null;
+    final onReaction = this.onReaction;
+    final onToggleSaved = this.onToggleSaved;
     final liked = message.reaction == MessageReaction.like;
     final disliked = message.reaction == MessageReaction.dislike;
     return [
@@ -61,7 +67,9 @@ class ChatMessageView extends StatelessWidget {
           color: liked ? colors.primary : colors.onSurfaceVariant,
           icon: const Icon(Icons.thumb_up_outlined, size: 18),
           selectedIcon: const Icon(Icons.thumb_up, size: 18),
-          onPressed: canReact ? () => onReaction!(MessageReaction.like) : null,
+          onPressed: canChangeFeedback && onReaction != null
+              ? () => onReaction(MessageReaction.like)
+              : null,
         ),
         IconButton(
           tooltip: disliked ? '撤销不喜欢' : '不喜欢',
@@ -69,18 +77,28 @@ class ChatMessageView extends StatelessWidget {
           color: disliked ? colors.primary : colors.onSurfaceVariant,
           icon: const Icon(Icons.thumb_down_outlined, size: 18),
           selectedIcon: const Icon(Icons.thumb_down, size: 18),
-          onPressed: canReact
-              ? () => onReaction!(MessageReaction.dislike)
+          onPressed: canChangeFeedback && onReaction != null
+              ? () => onReaction(MessageReaction.dislike)
               : null,
         ),
-        if (reactionState == ReactionRequestState.unconfirmed)
+        IconButton(
+          tooltip: message.saved ? '取消收藏' : '收藏',
+          isSelected: message.saved,
+          color: message.saved ? colors.primary : colors.onSurfaceVariant,
+          icon: const Icon(Icons.bookmark_border, size: 18),
+          selectedIcon: const Icon(Icons.bookmark, size: 18),
+          onPressed: canChangeFeedback && onToggleSaved != null
+              ? () => onToggleSaved(!message.saved)
+              : null,
+        ),
+        if (feedbackState == FeedbackRequestState.unconfirmed)
           IconButton(
             tooltip: '核对反馈状态',
             color: colors.onSurfaceVariant,
             icon: const Icon(Icons.sync, size: 20),
-            onPressed: onReaction == null ? null : () => onReaction!(null),
+            onPressed: onVerifyFeedback,
           ),
-        if (reactionState == ReactionRequestState.busy)
+        if (feedbackState == FeedbackRequestState.busy)
           Semantics(
             label: '正在处理反馈',
             liveRegion: true,
@@ -103,7 +121,9 @@ class ChatMessageView extends StatelessWidget {
     final user = message.role == 'user';
     final text = message.visibleText;
     final hasText = text.trim().isNotEmpty;
-    if (!hasText && message.attachments.isEmpty) {
+    final hasContent = hasText || message.attachments.isNotEmpty;
+    // 只有工具调用的历史消息也可能允许反馈。
+    if (!hasContent && (!confirmed || !message.feedbackAvailable)) {
       return const SizedBox.shrink();
     }
     final actions = _actions(context, text, hasText);
@@ -165,7 +185,9 @@ class ChatMessageView extends StatelessWidget {
                             height: 1.625,
                             letterSpacing: 0,
                           ),
-                        ),
+                        )
+                      else if (!hasContent)
+                        const Text('无可显示的正文'),
                       if (hasText && message.attachments.isNotEmpty)
                         const SizedBox(height: 8),
                       for (final (index, attachment)
@@ -246,7 +268,7 @@ class ChatMessageView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           MarkdownBody(
-            data: text,
+            data: hasText ? text : '无可显示的正文',
             fitContent: false,
             selectable: true,
             // 保留回复原文的单换行。Markdown 图片只展示替代文本。

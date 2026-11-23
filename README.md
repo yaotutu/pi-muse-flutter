@@ -12,7 +12,7 @@
 
 ### 操作消息
 
-已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞和不喜欢，点亮的按钮表示当前反馈，再点一次即可撤销。结果不明时，点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
+已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞、不喜欢和书签按钮。点书签收藏，再点一次取消收藏。收藏由服务器保存，可以与点赞或不喜欢同时使用。点亮的图标表示当前状态。结果不明时，先点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
 
 本机正在生成回复时，输入框右侧显示「停止回复」。输入下一条或添加附件后，按钮变为「停止并发送」。客户端在确认上一轮停止并同步历史后发送下一条。如果无法确认，下一条保留在输入框。若上一条也未保存，可通过「切换未发送草稿」找回两条内容。
 
@@ -66,7 +66,7 @@ Tap **执行详情** (Execution details) in the top right of chat. **动态** (A
 
 ### Message actions
 
-Use the buttons below a saved message to copy or quote it. Eligible messages also have Like and Dislike buttons. The active reaction is highlighted. Tap it again to clear it. If the result is uncertain, tap **核对反馈状态** (Check feedback status) below the message. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
+Use the buttons below a saved message to copy or quote it. Eligible messages also have Like, Dislike, and Bookmark buttons. Tap the bookmark to save it, then tap again to remove it. The server stores bookmarks independently of likes and dislikes. Highlighted icons show the current state. If the result is uncertain, first tap **核对反馈状态** (Check feedback status) below the message. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
 
 During a reply started on this device, the composer shows **停止回复** (Stop reply). Enter a new message or add an attachment to switch to **停止并发送** (Stop and send). The app sends the next message after it confirms the stop and syncs history. If it cannot confirm the stop, the next message stays in the composer. If the first message was also unsaved, **切换未发送草稿** (Switch unsent drafts) lets you recover both.
 

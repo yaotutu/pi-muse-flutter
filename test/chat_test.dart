@@ -70,7 +70,7 @@ class _Transport implements MuseApi {
   Future<Json> put(String path, Json body) async {
     feedbackWrites.add((path, body));
     return feedbackWrite == null
-        ? {'reaction': body['reaction'], 'comments': []}
+        ? {'reaction': body['reaction'], 'saved': false, 'comments': []}
         : await feedbackWrite!();
   }
 
@@ -120,12 +120,12 @@ Json _schedules() => {
 Future<void> _tick() => Future<void>.delayed(Duration.zero);
 const topicId = 'e1da5342-a4cc-42db-af18-fb9f3f2cf921';
 
-Json _reply(Object? reaction) => {
+Json _reply(String? reaction, {bool saved = false}) => {
   'id': 'answer',
   'role': 'assistant',
   'content': '<think>Private reasoning</think>One\nTwo',
   'metadata': {'source': 'chat', 'feedbackAvailable': true},
-  'feedback': {'reaction': reaction, 'comments': []},
+  'feedback': {'reaction': reaction, 'saved': saved, 'comments': []},
 };
 
 const _ready = SseFrame(
@@ -211,14 +211,10 @@ void main() {
       final binding = conversation.binding!;
       final receipt = Completer<Json>();
       api.feedbackWrite = () => receipt.future;
-      final changing = chat.changeReaction(
-        conversation,
-        binding,
-        'answer',
-        MessageReaction.dislike,
-      );
+      final changing = chat.changeSaved(conversation, binding, 'answer', true);
       final failure = expectLater(changing, throwsA(isA<ApiException>()));
-      expect(conversation.reactionState('answer'), ReactionRequestState.busy);
+      expect(conversation.feedbackState('answer'), FeedbackRequestState.busy);
+      expect(conversation.history.single.saved, isFalse);
       await chat.changeReaction(
         conversation,
         binding,
@@ -228,25 +224,28 @@ void main() {
       receipt.completeError(const ApiException(408));
       await failure;
       expect(conversation.history.single.reaction, MessageReaction.like);
+      expect(conversation.history.single.saved, isFalse);
       expect(
-        conversation.reactionState('answer'),
-        ReactionRequestState.unconfirmed,
+        conversation.feedbackState('answer'),
+        FeedbackRequestState.unconfirmed,
       );
-      await chat.changeReaction(
-        conversation,
-        binding,
-        'answer',
-        MessageReaction.dislike,
-      );
-      expect(api.feedbackWrites, hasLength(1));
+      await chat.changeSaved(conversation, binding, 'answer', true);
+      final (savedPath, savedBody) = api.feedbackWrites.single;
+      expect(savedPath, '/api/sessions/main/messages/answer/feedback/saved');
+      expect(savedBody, {'piSessionId': binding, 'saved': true});
       api.feedbackRead = (path, query) async {
         expect(path, '/api/sessions/main/messages/answer/feedback');
         expect(query, {'piSessionId': binding});
-        return {'reaction': 'dislike', 'comments': []};
+        return {'reaction': 'dislike', 'saved': true, 'comments': []};
       };
-      await chat.changeReaction(conversation, binding, 'answer', null);
+      await chat.verifyFeedback(conversation, binding, 'answer');
       expect(conversation.history.single.reaction, MessageReaction.dislike);
-      api.feedbackWrite = null;
+      expect(conversation.history.single.saved, isTrue);
+      api.feedbackWrite = () async => {
+        'reaction': null,
+        'saved': true,
+        'comments': [],
+      };
       await chat.changeReaction(
         conversation,
         binding,
@@ -257,7 +256,8 @@ void main() {
       expect(path, '/api/sessions/main/messages/answer/feedback/reaction');
       expect(body, {'piSessionId': binding, 'reaction': null});
       expect(conversation.history.single.reaction, isNull);
-      expect(conversation.reactionState('answer'), isNull);
+      expect(conversation.history.single.saved, isTrue);
+      expect(conversation.feedbackState('answer'), isNull);
     },
   );
 
@@ -282,13 +282,48 @@ void main() {
         MessageReaction.like,
       );
       expect(conversation.history.single.reaction, MessageReaction.like);
-      api.history[mainSession] = [_reply('dislike')];
+      api.history[mainSession] = [_reply('dislike', saved: true)];
       stale.complete(before);
       await refreshing;
       expect(reads, 2);
       expect(conversation.history.single.reaction, MessageReaction.dislike);
+      expect(conversation.history.single.saved, isTrue);
     },
   );
+
+  test(
+    'a saved conflict refreshes history and rejects the old binding',
+    () async {
+      final api = _Transport()..history[mainSession] = [_reply('like')];
+      final chat = ChatController(api, () => api)..synchronized = true;
+      addTearDown(chat.dispose);
+      final conversation = chat.active;
+      await chat.refresh(conversation);
+      final oldBinding = conversation.binding!;
+      api.feedbackWrite = () async {
+        api.bindings[mainSession] = 'reset-history';
+        api.history[mainSession] = [_reply(null, saved: true)];
+        throw const ApiException(409, code: 'SESSION_CONFLICT');
+      };
+      await expectLater(
+        chat.changeSaved(conversation, oldBinding, 'answer', true),
+        throwsA(isA<ApiException>()),
+      );
+      expect(conversation.binding, 'reset-history');
+      expect(conversation.history.single.reaction, isNull);
+      expect(conversation.history.single.saved, isTrue);
+      expect(conversation.feedbackState('answer'), isNull);
+      await chat.changeSaved(conversation, oldBinding, 'answer', false);
+      expect(api.feedbackWrites, hasLength(1));
+    },
+  );
+
+  test('history requires a boolean saved field on feedback', () {
+    final message = _reply('like', saved: true);
+    expect(ChatMessage.fromJson(message).saved, isTrue);
+    (message['feedback'] as Json)['saved'] = 'true';
+    expect(() => ChatMessage.fromJson(message), throwsFormatException);
+  });
 
   test(
     'quotes keep visible lines and a failed send preserves both drafts',

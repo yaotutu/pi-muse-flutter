@@ -74,6 +74,8 @@ class _MessageApi extends _SessionApi {
   final writes = <Json>[];
   final submissions = <Json>[];
   final stops = <Json>[];
+  Object? reaction;
+  bool saved = false;
 
   @override
   Stream<SseFrame> run(Json body) {
@@ -90,9 +92,16 @@ class _MessageApi extends _SessionApi {
 
   @override
   Future<Json> put(String path, Json body) async {
-    expect(path, '/api/sessions/main/messages/answer/feedback/reaction');
+    const feedbackPath = '/api/sessions/main/messages/answer/feedback';
+    if (body.containsKey('saved')) {
+      expect(path, '$feedbackPath/saved');
+      saved = body['saved'] as bool;
+    } else {
+      expect(path, '$feedbackPath/reaction');
+      reaction = body['reaction'];
+    }
     writes.add(body);
-    return {'reaction': body['reaction'], 'comments': []};
+    return {'reaction': reaction, 'saved': saved, 'comments': []};
   }
 }
 
@@ -316,6 +325,7 @@ void main() {
 
     expect(find.byTooltip('消息操作'), findsNothing);
     expect(action('question', '点赞'), findsNothing);
+    expect(action('question', '收藏'), findsNothing);
     await tapAction('question', '复制');
     await tapAction('answer', '复制');
     expect(clipboard, ['Original question', '**Visible reply**']);
@@ -329,7 +339,26 @@ void main() {
       tester.widget<IconButton>(action('answer', '撤销点赞')).isSelected,
       true,
     );
+    await tapAction('answer', '收藏');
+    expect(
+      tester.widget<IconButton>(action('answer', '取消收藏')).isSelected,
+      true,
+    );
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销点赞')).isSelected,
+      true,
+    );
     await tapAction('answer', '不喜欢');
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销不喜欢')).isSelected,
+      true,
+    );
+    expect(
+      tester.widget<IconButton>(action('answer', '取消收藏')).isSelected,
+      true,
+    );
+    await tapAction('answer', '取消收藏');
+    expect(tester.widget<IconButton>(action('answer', '收藏')).isSelected, false);
     expect(
       tester.widget<IconButton>(action('answer', '撤销不喜欢')).isSelected,
       true,
@@ -341,7 +370,9 @@ void main() {
     );
     expect(api.writes, [
       {'piSessionId': 'binding', 'reaction': 'like'},
+      {'piSessionId': 'binding', 'saved': true},
       {'piSessionId': 'binding', 'reaction': 'dislike'},
+      {'piSessionId': 'binding', 'saved': false},
       {'piSessionId': 'binding', 'reaction': null},
     ]);
 

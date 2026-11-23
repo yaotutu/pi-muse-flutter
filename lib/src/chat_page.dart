@@ -263,18 +263,17 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Future<void> _changeReaction(
+  Future<void> _reportFeedbackResult(
     Conversation conversation,
-    String binding,
     String id,
-    MessageReaction? selection,
+    Future<void> request,
   ) async {
     try {
-      await _chat.changeReaction(conversation, binding, id, selection);
+      await request;
     } catch (_) {
       if (!mounted || !identical(_chat.active, conversation)) return;
       final unconfirmed =
-          conversation.reactionState(id) == ReactionRequestState.unconfirmed;
+          conversation.feedbackState(id) == FeedbackRequestState.unconfirmed;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(unconfirmed ? '请在消息下方核对反馈状态' : '暂时无法更新反馈')),
       );
@@ -290,8 +289,8 @@ class _ChatPageState extends State<ChatPage> {
         final colors = theme.colorScheme;
         final conversation = _chat.active;
         final binding = conversation.binding;
-        final reactionsEnabled =
-            binding != null && _chat.canReact(conversation);
+        final feedbackEnabled =
+            binding != null && _chat.canChangeFeedback(conversation);
         final title =
             _chat.sessions
                 .where((session) => session.id == conversation.id)
@@ -446,8 +445,8 @@ class _ChatPageState extends State<ChatPage> {
                                           key: ValueKey(message.id),
                                           message: message,
                                           confirmed: confirmed,
-                                          reactionState: conversation
-                                              .reactionState(message.id),
+                                          feedbackState: conversation
+                                              .feedbackState(message.id),
                                           onQuote:
                                               confirmed &&
                                                   conversation.canEditDraft
@@ -461,12 +460,41 @@ class _ChatPageState extends State<ChatPage> {
                                                   }
                                                 }
                                               : null,
-                                          onReaction: reactionsEnabled
-                                              ? (reaction) => _changeReaction(
+                                          onReaction: feedbackEnabled
+                                              ? (reaction) =>
+                                                    _reportFeedbackResult(
+                                                      conversation,
+                                                      message.id,
+                                                      _chat.changeReaction(
+                                                        conversation,
+                                                        binding,
+                                                        message.id,
+                                                        reaction,
+                                                      ),
+                                                    )
+                                              : null,
+                                          onToggleSaved: feedbackEnabled
+                                              ? (saved) =>
+                                                    _reportFeedbackResult(
+                                                      conversation,
+                                                      message.id,
+                                                      _chat.changeSaved(
+                                                        conversation,
+                                                        binding,
+                                                        message.id,
+                                                        saved,
+                                                      ),
+                                                    )
+                                              : null,
+                                          onVerifyFeedback: feedbackEnabled
+                                              ? () => _reportFeedbackResult(
                                                   conversation,
-                                                  binding,
                                                   message.id,
-                                                  reaction,
+                                                  _chat.verifyFeedback(
+                                                    conversation,
+                                                    binding,
+                                                    message.id,
+                                                  ),
                                                 )
                                               : null,
                                         ),
