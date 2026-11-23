@@ -167,6 +167,8 @@ class Approval {
       sessionId = json['sessionId'] as String?,
       revision = json['revision'] as int,
       status = json['status'] as String,
+      title = json['title'] as String?,
+      execution = json['execution'] as Json?,
       scope = (json['preview'] as Json)['scope'] as String,
       path = (json['preview'] as Json)['path'] as String,
       before = (json['preview'] as Json)['before'] as String,
@@ -178,6 +180,8 @@ class Approval {
   final String? sessionId;
   final int revision;
   final String status;
+  final String? title;
+  final Json? execution;
   final String scope;
   final String path;
   final String before;
@@ -295,6 +299,30 @@ class ChatController extends ChangeNotifier {
       _unconfirmedApprovals.contains(id);
   final _runs = <(String, String), Json>{};
   final _runRevisions = <(String, String), int>{};
+  final _lastRuns = <String, Json>{};
+  final _activityChanges = <String, int>{};
+  final _approvalChanges = <String, int>{};
+  int _workspaceSnapshot = 0;
+
+  int get workspaceSnapshot => _workspaceSnapshot;
+  int approvalRevision(String id) => _approvalRevisions[id] ?? 0;
+
+  (int, int) executionHistoryVersion(String id, {required bool approvals}) => (
+    _workspaceSnapshot,
+    (approvals ? _approvalChanges : _activityChanges)[id] ?? 0,
+  );
+
+  List<Json> executionRuns(String id) {
+    if (!synchronized) return const [];
+    final active = _runs.entries
+        .where((entry) => entry.key.$1 == id)
+        .map((entry) => entry.value)
+        .toList();
+    final last = _lastRuns[id];
+    if (active.isEmpty && last != null) active.add(last);
+    return active;
+  }
+
   final _random = Random.secure();
   List<SessionEntry> sessions = const [SessionEntry(mainSession, '主聊天')];
   String activeId = mainSession;
@@ -312,9 +340,10 @@ class ChatController extends ChangeNotifier {
   String? _instanceId;
 
   Conversation get active => conversations[activeId]!;
-  List<Approval> get activeApprovals => approvals.values
-      .where((approval) => approval.sessionId == activeId)
-      .toList();
+  List<Approval> get activeApprovals => sessionApprovals(activeId);
+
+  List<Approval> sessionApprovals(String id) =>
+      approvals.values.where((approval) => approval.sessionId == id).toList();
 
   bool get pickingAttachments => identical(_attachmentPickerOwner, active);
 
@@ -430,8 +459,18 @@ class ChatController extends ChangeNotifier {
           .map(Approval.fromJson)
           .toList();
       final instanceId = data['instanceId'] as String;
-      if (_instanceId != instanceId) _cancelFollowUps();
+      final sameInstance = _instanceId == instanceId;
+      final previouslyRunning = sameInstance
+          ? _runs.keys.toList()
+          : const <(String, String)>[];
+      if (!sameInstance) {
+        _cancelFollowUps();
+        _lastRuns.clear();
+        _activityChanges.clear();
+        _approvalChanges.clear();
+      }
       _instanceId = instanceId;
+      final snapshot = ++_workspaceSnapshot;
       _runs.clear();
       _runRevisions.clear();
       approvals.clear();
@@ -443,6 +482,9 @@ class ChatController extends ChangeNotifier {
       }
       _retry = 0;
       synchronized = true;
+      for (final key in previouslyRunning) {
+        if (!_runs.containsKey(key)) unawaited(_readMissedRun(key, snapshot));
+      }
       unawaited(refreshDirectory());
       for (final conversation in conversations.values) {
         unawaited(refresh(conversation));
@@ -454,7 +496,14 @@ class ChatController extends ChangeNotifier {
         case 'approval_pending':
           _recordApproval(Approval.fromJson(data));
         case 'approval_updated':
-          _finishApproval(data['id'] as String, data['revision'] as int);
+          _finishApproval(
+            data['id'] as String,
+            data['revision'] as int,
+            data['sessionId'] as String?,
+          );
+        case 'activity_updated':
+          final id = data['sessionId'] as String;
+          _activityChanges.update(id, (value) => value + 1, ifAbsent: () => 1);
         case 'conversation_updated':
           final conversation = conversations[data['sessionId']];
           if (conversation != null) unawaited(refresh(conversation));
@@ -474,6 +523,15 @@ class ChatController extends ChangeNotifier {
       _runs[key] = run;
     } else if (_isTerminalStatus(run['status'])) {
       final wasRunning = _runs.remove(key) != null;
+      final last = _lastRuns[key.$1];
+      final endedAt = run['endedAt'] as String?;
+      final lastEndedAt = last?['endedAt'] as String?;
+      if (last == null ||
+          last['runId'] == key.$2 ||
+          lastEndedAt == null ||
+          (endedAt != null && endedAt.compareTo(lastEndedAt) >= 0)) {
+        _lastRuns[key.$1] = run;
+      }
       final conversation = conversations[key.$1];
       if (conversation == null) return;
       final pending =
@@ -486,6 +544,32 @@ class ChatController extends ChangeNotifier {
         }
       }
       if (wasRunning || isLocalRun) unawaited(refresh(conversation));
+    }
+  }
+
+  Future<void> _readMissedRun((String, String) key, int snapshot) async {
+    try {
+      final response = await api.get(
+        '/api/runs/status',
+        query: {'sessionId': key.$1, 'runId': key.$2},
+      );
+      final run = response['status'] as Json;
+      if (_disposed ||
+          !synchronized ||
+          snapshot != _workspaceSnapshot ||
+          response['instanceId'] != _instanceId ||
+          run['sessionId'] != key.$1 ||
+          run['runId'] != key.$2 ||
+          !_isTerminalStatus(run['status']) ||
+          sessionEntry(key.$1) == null) {
+        return;
+      }
+      _recordRun(run);
+      _changed();
+    } catch (error) {
+      if (snapshot != _workspaceSnapshot || !synchronized) return;
+      _checkAuth(error);
+      if (expired) _changed();
     }
   }
 
@@ -502,11 +586,15 @@ class ChatController extends ChangeNotifier {
     if (approval.status == 'pending') approvals[approval.id] = approval;
   }
 
-  void _finishApproval(String id, int revision) {
+  void _finishApproval(String id, int revision, String? sessionId) {
     if (revision <= (_approvalRevisions[id] ?? 0)) return;
     _approvalRevisions[id] = revision;
     _unconfirmedApprovals.remove(id);
+    final session = sessionId ?? approvals[id]?.sessionId;
     approvals.remove(id);
+    if (session != null) {
+      _approvalChanges.update(session, (value) => value + 1, ifAbsent: () => 1);
+    }
   }
 
   Future<bool> refreshDirectory() {
@@ -698,6 +786,9 @@ class ChatController extends ChangeNotifier {
     final removed = conversations.remove(id);
     if (removed != null) _clearFollowUp(removed);
     _runs.removeWhere((key, _) => key.$1 == id);
+    _lastRuns.remove(id);
+    _activityChanges.remove(id);
+    _approvalChanges.remove(id);
     approvals.removeWhere((_, approval) => approval.sessionId == id);
     if (activeId == id) select(mainSession);
   }
@@ -1181,7 +1272,28 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<String> decide(Approval approval, bool approve) async {
+  Future<Json> readExecution(String path, {Map<String, String>? query}) async {
+    try {
+      return await api.get(path, query: query);
+    } catch (error) {
+      _checkAuth(error);
+      if (expired) _changed();
+      rethrow;
+    }
+  }
+
+  Future<Approval> readApprovalDetail(String sessionId, String id) async {
+    final payload = await readExecution(
+      '/api/approvals/${Uri.encodeComponent(id)}',
+    );
+    final approval = Approval.fromJson(payload['approval'] as Json? ?? payload);
+    if (approval.id != id || approval.sessionId != sessionId) {
+      throw const FormatException('Unexpected approval');
+    }
+    return approval;
+  }
+
+  Future<Approval> decide(Approval approval, bool approve) async {
     if (!synchronized ||
         approvals[approval.id]?.revision != approval.revision ||
         approvalNeedsVerification(approval.id) ||
@@ -1194,7 +1306,7 @@ class ChatController extends ChangeNotifier {
         '/api/approvals/${Uri.encodeComponent(approval.id)}/decision',
         {'decision': approve ? 'approve' : 'deny'},
       );
-      return _applyApprovalResult(result);
+      return _applyApprovalResult(result, approval);
     } catch (error) {
       _checkAuth(error);
       _changed();
@@ -1202,12 +1314,12 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<String> checkApproval(Approval approval) async {
+  Future<Approval> checkApproval(Approval approval) async {
     try {
       final result = await api.get(
         '/api/approvals/${Uri.encodeComponent(approval.id)}',
       );
-      return _applyApprovalResult(result);
+      return _applyApprovalResult(result, approval);
     } catch (error) {
       _checkAuth(error);
       _changed();
@@ -1215,15 +1327,20 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  String _applyApprovalResult(Json result) {
+  Approval _applyApprovalResult(Json result, Approval expected) {
     final payload = result['approval'] as Json? ?? result;
     final approval = Approval.fromJson(payload);
+    if (approval.id != expected.id ||
+        approval.sessionId != expected.sessionId ||
+        approval.revision < approvalRevision(approval.id)) {
+      throw const FormatException('Outdated or unexpected approval');
+    }
     _unconfirmedApprovals.remove(approval.id);
     if (approval.status != 'pending') {
-      _finishApproval(approval.id, approval.revision);
+      _finishApproval(approval.id, approval.revision, approval.sessionId);
     }
     _changed();
-    return approval.status;
+    return approval;
   }
 
   String _newId() => List.generate(

@@ -6,6 +6,7 @@ import 'appearance_page.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
+import 'execution_details_page.dart';
 import 'session_management.dart';
 import 'workspace_files.dart';
 import 'workspace_files_page.dart';
@@ -224,9 +225,36 @@ class _ChatPageState extends State<ChatPage> {
     }
     final selected = approval;
     if (!mounted || selected == null) return;
-    await Navigator.of(context).push<void>(
+    await _showApproval(context, selected.sessionId!, selected.id, selected);
+  }
+
+  Future<void> _showApproval(
+    BuildContext context,
+    String sessionId,
+    String id,
+    Approval? pending,
+  ) => Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) => _ApprovalPage(
+        chat: _chat,
+        sessionId: sessionId,
+        id: id,
+        pending: pending,
+      ),
+    ),
+  );
+
+  void _openExecutionDetails(String sessionId, String title) {
+    _focus.unfocus();
+    Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (context) => _ApprovalPage(chat: _chat, approval: selected),
+        builder: (_) => ExecutionDetailsPage(
+          chat: _chat,
+          sessionId: sessionId,
+          title: title,
+          openApproval: (context, id, pending) =>
+              _showApproval(context, sessionId, id, pending),
+        ),
       ),
     );
   }
@@ -305,7 +333,22 @@ class _ChatPageState extends State<ChatPage> {
             ),
             title: _ChatTitle(title: title, activity: activity),
             centerTitle: true,
-            actions: const [SizedBox(width: 76)],
+            actions: [
+              SizedBox(
+                width: 76,
+                child: Center(
+                  child: IconButton(
+                    tooltip: '执行详情',
+                    onPressed: () =>
+                        _openExecutionDetails(conversation.id, title),
+                    icon: Badge(
+                      isLabelVisible: hasApproval,
+                      child: const Icon(Icons.monitor_heart_outlined),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           bottomNavigationBar: compact
               ? null
@@ -1000,10 +1043,17 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
 }
 
 class _ApprovalPage extends StatefulWidget {
-  const _ApprovalPage({required this.chat, required this.approval});
+  const _ApprovalPage({
+    required this.chat,
+    required this.sessionId,
+    required this.id,
+    required this.pending,
+  });
 
   final ChatController chat;
-  final Approval approval;
+  final String sessionId;
+  final String id;
+  final Approval? pending;
 
   @override
   State<_ApprovalPage> createState() => _ApprovalPageState();
@@ -1012,14 +1062,92 @@ class _ApprovalPage extends StatefulWidget {
 class _ApprovalPageState extends State<_ApprovalPage> {
   bool _busy = false;
   bool _unknown = false;
-  String? _result;
+  bool _readFailed = false;
+  int? _snapshot;
+  int _readRevision = 0;
+  int _readTicket = 0;
+  bool _reading = false;
+  late Approval? _approval = widget.pending;
 
-  Future<void> _decide(bool approve) async {
+  bool get _history => widget.pending == null;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.chat.addListener(_approvalChanged);
+    _approvalChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.chat.removeListener(_approvalChanged);
+    super.dispose();
+  }
+
+  void _approvalChanged() {
+    final chat = widget.chat;
+    if (!chat.synchronized) {
+      if (_snapshot != null) {
+        _readTicket++;
+        setState(() {
+          _snapshot = null;
+          _reading = false;
+        });
+      }
+      return;
+    }
+    if (_busy || _unknown) return;
+    final revision = chat.approvalRevision(widget.id);
+    final snapshot = chat.workspaceSnapshot;
+    if (_snapshot == snapshot && _readRevision == revision) return;
+    final reconnected = _snapshot != snapshot;
+    _snapshot = snapshot;
+    _readRevision = revision;
+    if (_approval == null ||
+        revision > _approval!.revision ||
+        (reconnected && (_history || chat.approvals[widget.id] == null))) {
+      _readApproval();
+    }
+  }
+
+  Future<void> _readApproval() async {
+    if (!widget.chat.synchronized) return;
+    final ticket = ++_readTicket;
+    setState(() {
+      _reading = true;
+      _readFailed = false;
+    });
+    try {
+      final approval = await widget.chat.readApprovalDetail(
+        widget.sessionId,
+        widget.id,
+      );
+      if (!mounted || ticket != _readTicket) return;
+      if (approval.revision < widget.chat.approvalRevision(widget.id)) {
+        throw const FormatException('Outdated approval');
+      }
+      setState(() => _approval = approval);
+    } catch (_) {
+      if (mounted && ticket == _readTicket) setState(() => _readFailed = true);
+    } finally {
+      if (mounted && ticket == _readTicket) setState(() => _reading = false);
+    }
+  }
+
+  bool _actionable(Approval approval) =>
+      !_history &&
+      !_reading &&
+      widget.chat.synchronized &&
+      widget.chat.approvals[approval.id]?.revision == approval.revision &&
+      approval.expiresAt.isAfter(DateTime.now());
+
+  Future<void> _decide(Approval approval, bool approve) async {
+    final snapshot = widget.chat.workspaceSnapshot;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(approve ? '批准这次修改？' : '拒绝这次修改？'),
-        content: Text(widget.approval.path),
+        content: Text(approval.path),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1032,11 +1160,16 @@ class _ApprovalPageState extends State<_ApprovalPage> {
         ],
       ),
     );
-    if (!mounted || confirmed != true) return;
-    await _submit(() => widget.chat.decide(widget.approval, approve));
+    if (!mounted ||
+        confirmed != true ||
+        !_actionable(approval) ||
+        snapshot != widget.chat.workspaceSnapshot) {
+      return;
+    }
+    await _submit(() => widget.chat.decide(approval, approve));
   }
 
-  Future<void> _submit(Future<String> Function() action) async {
+  Future<void> _submit(Future<Approval> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -1044,18 +1177,15 @@ class _ApprovalPageState extends State<_ApprovalPage> {
       if (!mounted) return;
       setState(() {
         _unknown = false;
-        _result = switch (result) {
-          'approved' => '已批准，写入结果以服务端执行为准。',
-          'denied' => '已拒绝。',
-          'expired' => '这项审批已过期。',
-          'cancelled' => '这项审批已取消。',
-          _ => null,
-        };
+        _approval = result;
       });
     } catch (_) {
       if (mounted) setState(() => _unknown = true);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+        _approvalChanged();
+      }
     }
   }
 
@@ -1063,27 +1193,40 @@ class _ApprovalPageState extends State<_ApprovalPage> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.chat,
     builder: (context, _) {
-      final approval = widget.approval;
-      final pending = widget.chat.approvals[approval.id];
+      final approval = _approval;
+      if (approval == null) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('审批详情')),
+          body: Center(
+            child: !widget.chat.synchronized
+                ? const Text('审批状态待同步')
+                : _readFailed
+                ? TextButton(
+                    onPressed: _readApproval,
+                    child: const Text('读取失败，点此重试'),
+                  )
+                : const CircularProgressIndicator(),
+          ),
+        );
+      }
       final needsVerification =
-          _unknown || widget.chat.approvalNeedsVerification(approval.id);
-      final actionable =
-          widget.chat.synchronized &&
-          pending?.revision == approval.revision &&
-          approval.expiresAt.isAfter(DateTime.now());
-      final note =
-          _result ??
-          (needsVerification
-              ? '结果未确认，请先核对审批状态。'
-              : !widget.chat.synchronized
-              ? '正在重新连接，连接恢复后可继续。'
-              : !actionable
-              ? '这项审批已处理或失效。'
-              : null);
+          !_history &&
+          (_unknown || widget.chat.approvalNeedsVerification(approval.id));
+      final actionable = _actionable(approval);
+      final note = needsVerification
+          ? '结果未确认，请先核对审批状态。'
+          : !widget.chat.synchronized
+          ? '审批状态待同步'
+          : approval.status != 'pending'
+          ? executionStatus(approval.status)
+          : !actionable && !_reading
+          ? '这项审批已处理或失效。'
+          : null;
+      final execution = approval.execution;
       return PopScope(
         canPop: !_busy,
         child: Scaffold(
-          appBar: AppBar(title: const Text('确认文件修改')),
+          appBar: AppBar(title: Text(_history ? '审批详情' : '确认文件修改')),
           body: SafeArea(
             child: Column(
               children: [
@@ -1097,6 +1240,20 @@ class _ApprovalPageState extends State<_ApprovalPage> {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         Text(approval.scope == 'skill' ? '技能文件' : '工作区文件'),
+                        if (approval.status == 'approved' ||
+                            execution != null) ...[
+                          const SizedBox(height: 12),
+                          Text(switch (execution?['status']) {
+                            'running' => '文件提交中',
+                            'succeeded' => '文件已写入',
+                            'failed' => '文件写入失败',
+                            'cancelled' => '文件写入已取消',
+                            'unknown' => '文件写入结果待核对',
+                            _ => '尚未收到文件执行回执',
+                          }),
+                          if (execution?['result'] case final String result)
+                            Text(result),
+                        ],
                         const SizedBox(height: 18),
                         _FileText(
                           label: '修改前',
@@ -1119,31 +1276,38 @@ class _ApprovalPageState extends State<_ApprovalPage> {
                     spacing: 10,
                     children: [
                       if (note != null) Text(note),
-                      if (_busy)
+                      if (_busy || _reading)
                         const Padding(
                           padding: EdgeInsets.all(8),
                           child: CircularProgressIndicator(),
                         )
                       else if (needsVerification)
                         TextButton(
-                          onPressed: () => _submit(
-                            () => widget.chat.checkApproval(approval),
-                          ),
+                          onPressed: widget.chat.synchronized
+                              ? () => _submit(
+                                  () => widget.chat.checkApproval(approval),
+                                )
+                              : null,
                           child: const Text('核对状态'),
                         )
-                      else if (actionable && _result == null) ...[
+                      else if (_readFailed)
+                        TextButton(
+                          onPressed: _readApproval,
+                          child: const Text('读取失败，点此重试'),
+                        )
+                      else if (actionable) ...[
                         OutlinedButton(
-                          onPressed: () => _decide(false),
+                          onPressed: () => _decide(approval, false),
                           child: const Text('拒绝'),
                         ),
                         FilledButton(
-                          onPressed: () => _decide(true),
+                          onPressed: () => _decide(approval, true),
                           child: const Text('批准修改'),
                         ),
                       ] else
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('返回对话'),
+                          child: const Text('返回'),
                         ),
                     ],
                   ),

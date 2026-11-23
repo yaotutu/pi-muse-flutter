@@ -18,6 +18,7 @@ class _Transport implements MuseApi {
   final stops = <Json>[];
   final feedbackWrites = <(String, Json)>[];
   Future<Json> Function(String id)? readHistory;
+  Future<Json> Function(Map<String, String> query)? readRunStatus;
   Future<Json> Function()? stopResult;
   Future<Json> Function()? feedbackWrite;
   Future<Json> Function(String path, Map<String, String>? query)? feedbackRead;
@@ -42,7 +43,10 @@ class _Transport implements MuseApi {
       return readDirectory == null ? directoryData() : await readDirectory!();
     }
     if (path.endsWith('/schedules')) return _schedules();
-    if (path == '/api/runs/status') throw const ApiException(404);
+    if (path == '/api/runs/status') {
+      if (readRunStatus == null) throw const ApiException(404);
+      return await readRunStatus!(query!);
+    }
     if (path.endsWith('/feedback')) return await feedbackRead!(path, query);
     final id = query!['sessionId']!;
     return readHistory == null ? historyData(id) : await readHistory!(id);
@@ -145,6 +149,57 @@ SseFrame _status(Json submitted, int revision, String status) => SseFrame(
 );
 
 void main() {
+  test(
+    'execution details recover a missed terminal run and clear it on restart',
+    () async {
+      final api = _Transport();
+      final first = _Transport();
+      final second = _Transport();
+      final replacement = _Transport();
+      final notifications = [first, second, replacement].iterator;
+      final chat = ChatController(api, () {
+        notifications.moveNext();
+        return notifications.current;
+      });
+      addTearDown(chat.dispose);
+      final terminal = Completer<Json>();
+      api.readRunStatus = (query) {
+        expect(query, {'sessionId': mainSession, 'runId': 'external'});
+        return terminal.future;
+      };
+      final run = {'sessionId': mainSession, 'runId': 'external'};
+      chat.start();
+      first.stream.add(_ready);
+      first.stream.add(_status(run, 1, 'running'));
+      await _tick();
+      expect(chat.executionRuns(mainSession).single['status'], 'running');
+      chat.reconnect();
+      expect(chat.executionRuns(mainSession), isEmpty);
+      second.stream.add(_ready);
+      await _tick();
+      terminal.complete({
+        'instanceId': 'test-instance',
+        'status': _status(run, 2, 'succeeded').data,
+      });
+      await _tick();
+      expect(chat.executionRuns(mainSession).single['status'], 'succeeded');
+      expect(chat.executionRuns(topicId), isEmpty);
+      chat.reconnect();
+      replacement.stream.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'replacement',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await _tick();
+      expect(chat.executionRuns(mainSession), isEmpty);
+    },
+  );
+
   test(
     'feedback keeps its confirmed state until an ambiguous write is checked',
     () async {

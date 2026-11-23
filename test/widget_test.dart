@@ -96,7 +96,171 @@ class _MessageApi extends _SessionApi {
   }
 }
 
+class _ExecutionApi extends _SessionApi {
+  final activityCursors = <String?>[];
+  final frames = StreamController<SseFrame>();
+  int subscriptions = 0;
+
+  @override
+  Stream<SseFrame> events() {
+    subscriptions++;
+    return frames.stream;
+  }
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    switch (path) {
+      case '/api/activities':
+        expect(query?['sessionId'], mainSession);
+        final cursor = query?['cursor'];
+        activityCursors.add(cursor);
+        return {
+          'activities': [
+            {
+              'sessionId': mainSession,
+              'id': cursor == null ? 'first' : 'second',
+              'title': cursor == null ? '第一项活动' : '第二项活动',
+              'status': 'completed',
+            },
+          ],
+          'nextCursor': cursor == null ? 'opaque-cursor' : null,
+        };
+      case '/api/activities/second':
+        return {
+          'activity': {
+            'id': 'second',
+            'sessionId': mainSession,
+            'title': '第二项活动',
+            'status': 'completed',
+            'goal': '核对执行步骤',
+          },
+          'steps': [
+            {'id': 'step', 'title': '读取测试文件', 'status': 'succeeded'},
+          ],
+        };
+      case '/api/approvals':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'approvals': [
+            {
+              'sessionId': mainSession,
+              'id': 'past',
+              'status': 'approved',
+              'title': '历史文件修改',
+            },
+          ],
+          'nextCursor': null,
+        };
+      case '/api/approvals/past':
+        return {
+          'id': 'past',
+          'sessionId': mainSession,
+          'revision': 3,
+          'status': 'approved',
+          'expiresAt': '2099-01-01T00:00:00Z',
+          'preview': {
+            'scope': 'workspace',
+            'path': 'test.txt',
+            'before': '原文',
+            'after': '新文',
+            'beforeExists': true,
+          },
+          'execution': {'status': 'failed', 'result': '目标文件版本已变化'},
+        };
+      default:
+        return super.get(path, query: query);
+    }
+  }
+}
+
 void main() {
+  testWidgets(
+    'execution details open directly and scope activities and approvals to chat',
+    (tester) async {
+      final api = _ExecutionApi();
+      final chat = ChatController(api, () => api);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': 'active',
+                'revision': 1,
+                'status': 'running',
+                'label': '正在执行工具',
+                'tools': [
+                  {'label': '读取资料', 'status': 'running'},
+                ],
+              },
+              {
+                'sessionId': 'topic',
+                'runId': 'other',
+                'revision': 1,
+                'status': 'running',
+                'label': '其他会话运行',
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(
+            chat: chat,
+            appearance: appearance,
+            onConnection: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '保留草稿');
+      await tester.tap(find.byTooltip('执行详情'));
+      await tester.pumpAndSettle();
+      expect(find.text('读取资料'), findsOneWidget);
+      expect(find.text('其他会话运行'), findsNothing);
+      await tester.tap(find.text('历史'));
+      await tester.pumpAndSettle();
+      expect(find.text('第一项活动'), findsOneWidget);
+      await tester.tap(find.text('加载更多'));
+      await tester.pumpAndSettle();
+      expect(api.activityCursors, [null, 'opaque-cursor']);
+      await tester.tap(find.text('第二项活动'));
+      await tester.pumpAndSettle();
+      expect(find.text('读取测试文件'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('审批'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看审批历史'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('历史文件修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('新文'), findsOneWidget);
+      expect(find.text('已批准'), findsOneWidget);
+      expect(find.text('文件写入失败'), findsOneWidget);
+      expect(find.text('批准修改'), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('保留草稿'), findsOneWidget);
+      expect(api.subscriptions, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('message actions copy, react, quote and stop from the composer', (
     tester,
   ) async {

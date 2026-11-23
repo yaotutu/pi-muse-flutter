@@ -6,6 +6,10 @@
 
 点左上角打开侧边栏，选择会话或点「新建会话」。顶部居中显示当前会话名称。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。回复实时显示。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
 
+### 查看执行详情
+
+点聊天右上角的「执行详情」。**动态**显示当前会话的运行阶段、工具与子任务，有待审批时可跳转到对应列表。**审批**可查看待处理的文件修改和已处理的记录，历史预览会同时显示审批结果与实际写入回执。**历史**显示当前会话已登记的活动，点开可看目标、进度、结果与执行步骤。普通聊天可能没有活动记录。返回键回到聊天，草稿和正在生成的回复会保留。
+
 ### 操作消息
 
 已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞和不喜欢，点亮的按钮表示当前反馈，再点一次即可撤销。结果不明时，点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
@@ -51,6 +55,10 @@ flutter run -d <android-device-id>
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, use the main chat to create or switch sessions.
 
 Open the drawer with the top-left menu button to switch sessions or tap **新建会话** (New session). The centered title displays the current session name. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. Replies stream into the conversation. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+
+### View execution details
+
+Tap **执行详情** (Execution details) in the top right of chat. **动态** (Activity) shows the current conversation's run status, tools, and subtasks, with a link to any pending approvals. **审批** (Approvals) lists pending file changes and past decisions. A historical preview shows the decision and the file operation result separately. **历史** (History) lists registered activities for the current conversation. Open one to see its goal, progress, result, and execution steps. A regular chat turn may have no activity record. Use Back to return to the conversation with the draft and any in-progress reply intact.
 
 ### Message actions
 
