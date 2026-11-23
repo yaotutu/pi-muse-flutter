@@ -70,7 +70,7 @@ class _SessionApi extends MuseApi {
 
 void main() {
   testWidgets(
-    'manage topics from the picker and re-confirm a changed task list',
+    'manage topics from the drawer and re-confirm a changed task list',
     (tester) async {
       final api = _SessionApi();
       final chat = ChatController(api, () => api)..synchronized = true;
@@ -90,7 +90,15 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('默认会话'));
+      final menuButton = find.byTooltip('打开导航菜单');
+      final drawer = find.byType(Drawer);
+      await tester.tap(menuButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: drawer, matching: find.text('计划')));
+      await tester.pumpAndSettle();
+      expect(chat.activeId, 'topic');
+      expect(drawer, findsNothing);
+      await tester.tap(menuButton);
       await tester.pumpAndSettle();
       expect(find.byTooltip('更多操作：默认会话'), findsNothing);
       Future<void> openAction(String title, String action) async {
@@ -116,8 +124,11 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
-      expect(find.text('切换会话'), findsOneWidget);
-      expect(find.text('新计划'), findsOneWidget);
+      expect(drawer, findsOneWidget);
+      expect(
+        find.descendant(of: drawer, matching: find.text('新计划')),
+        findsOneWidget,
+      );
       await openAction('新计划', '删除');
       expect(find.text('定时任务：任务 1'), findsOneWidget);
       expect(find.text('网页监控：更新监控'), findsOneWidget);
@@ -153,7 +164,7 @@ void main() {
         'removed': {'sessions': 1},
       });
       await tester.pumpAndSettle();
-      expect(find.text('切换会话'), findsOneWidget);
+      expect(drawer, findsOneWidget);
       expect(find.text('新计划'), findsNothing);
       expect(chat.activeId, mainSession);
       expect(api.deletes, [
@@ -241,11 +252,26 @@ void main() {
     expect(tester.getCenter(title).dx, closeTo(180, 15));
     await tester.tap(title);
     await tester.pumpAndSettle();
-    expect(find.text('切换会话'), findsOneWidget);
-    expect(find.text('随手记'), findsOneWidget);
-    expect(find.text('新建会话'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+    final drawer = find.byType(Drawer);
+    expect(drawer, findsNothing);
+    await tester.tap(find.byTooltip('打开导航菜单'));
+    await tester.pumpAndSettle();
+    expect(drawer, findsOneWidget);
+    expect(
+      find.descendant(of: drawer, matching: find.text('随手记')),
+      findsOneWidget,
+    );
+    final create = find.descendant(of: drawer, matching: find.text('新建会话'));
+    await tester.tap(create);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(drawer, findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
+    expect(drawer, findsNothing);
 
     final bottom = find.byType(NavigationBar);
     final destinations = tester.widget<NavigationBar>(bottom).destinations;

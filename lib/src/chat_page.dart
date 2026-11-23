@@ -59,38 +59,102 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildDrawer(BuildContext context) {
     final scaffold = Scaffold.of(context);
+    final colors = Theme.of(context).colorScheme;
     return Drawer(
       semanticLabel: '侧边导航',
       child: SafeArea(
-        child: ListView(
+        child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          children: [
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('工作区文件'),
-              enabled: !_chat.expired,
-              onTap: _chat.expired
-                  ? null
-                  : () {
-                      scaffold.closeDrawer();
-                      Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) => WorkspaceFilesPage(
-                            files: WorkspaceFiles(_chat.api),
-                          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+                child: FilledButton.tonalIcon(
+                  onPressed: _chat.synchronized
+                      ? () async {
+                          final created = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => _NewSessionDialog(chat: _chat),
+                          );
+                          if (created == true && scaffold.mounted) {
+                            scaffold.closeDrawer();
+                          }
+                        }
+                      : null,
+                  icon: const Icon(Icons.add),
+                  label: const Text('新建会话'),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    if (_chat.directoryError case final String error)
+                      ListTile(
+                        title: Text(error),
+                        onTap: _chat.refreshDirectory,
+                      ),
+                    for (final session in _chat.sessions)
+                      ListTile(
+                        key: ValueKey(session.id),
+                        shape: const StadiumBorder(),
+                        title: Text(
+                          session.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      );
-                    },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('设置'),
-              onTap: () {
-                scaffold.closeDrawer();
-                _openSettings();
-              },
-            ),
-          ],
+                        leading: Icon(
+                          session.id == mainSession
+                              ? Icons.home_outlined
+                              : Icons.chat_bubble_outline,
+                        ),
+                        selected: session.id == _chat.activeId,
+                        selectedColor: colors.onSecondaryContainer,
+                        selectedTileColor: colors.secondaryContainer,
+                        trailing: session.id == mainSession
+                            ? null
+                            : SessionManagementMenu(
+                                chat: _chat,
+                                session: session,
+                              ),
+                        onTap: () {
+                          if (_chat.sessionEntry(session.id) == null) return;
+                          _chat.select(session.id);
+                          scaffold.closeDrawer();
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: const Text('工作区文件'),
+                enabled: !_chat.expired,
+                onTap: _chat.expired
+                    ? null
+                    : () {
+                        scaffold.closeDrawer();
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => WorkspaceFilesPage(
+                              files: WorkspaceFiles(_chat.api),
+                            ),
+                          ),
+                        );
+                      },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('设置'),
+                onTap: () {
+                  scaffold.closeDrawer();
+                  _openSettings();
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -132,71 +196,6 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
     );
-  }
-
-  Future<void> _pickSession() async {
-    _focus.unfocus();
-    final choice = await showDialog<_SessionChoice>(
-      context: context,
-      builder: (context) => ListenableBuilder(
-        listenable: _chat,
-        builder: (context, _) {
-          final colors = Theme.of(context).colorScheme;
-          return AlertDialog(
-            title: const Text('切换会话'),
-            scrollable: true,
-            contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_chat.directoryError case final String error)
-                  ListTile(title: Text(error), onTap: _chat.refreshDirectory),
-                for (final session in _chat.sessions)
-                  ListTile(
-                    key: ValueKey(session.id),
-                    shape: const StadiumBorder(),
-                    title: Text(session.title),
-                    leading: Icon(
-                      session.id == mainSession
-                          ? Icons.home_outlined
-                          : Icons.chat_bubble_outline,
-                    ),
-                    selected: session.id == _chat.activeId,
-                    selectedColor: colors.onSecondaryContainer,
-                    selectedTileColor: colors.secondaryContainer,
-                    trailing: session.id == mainSession
-                        ? null
-                        : SessionManagementMenu(chat: _chat, session: session),
-                    onTap: () =>
-                        Navigator.pop(context, _SelectSession(session.id)),
-                  ),
-              ],
-            ),
-            actions: [
-              TextButton.icon(
-                onPressed: _chat.synchronized
-                    ? () => Navigator.pop(context, const _CreateSession())
-                    : null,
-                icon: const Icon(Icons.add),
-                label: const Text('新建会话'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    if (!mounted) return;
-    switch (choice) {
-      case _SelectSession(:final id):
-        if (_chat.sessionEntry(id) != null) _chat.select(id);
-      case _CreateSession():
-        await showDialog<void>(
-          context: context,
-          builder: (_) => _NewSessionDialog(chat: _chat),
-        );
-      case null:
-        break;
-    }
   }
 
   Future<void> _openApproval() async {
@@ -283,11 +282,7 @@ class _ChatPageState extends State<ChatPage> {
                 icon: const Icon(Icons.menu),
               ),
             ),
-            title: _ChatTitle(
-              title: title,
-              activity: activity,
-              onTap: _pickSession,
-            ),
+            title: _ChatTitle(title: title, activity: activity),
             centerTitle: true,
             actions: const [SizedBox(width: 76)],
           ),
@@ -607,96 +602,62 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-sealed class _SessionChoice {
-  const _SessionChoice();
-}
-
-class _SelectSession extends _SessionChoice {
-  const _SelectSession(this.id);
-
-  final String id;
-}
-
-class _CreateSession extends _SessionChoice {
-  const _CreateSession();
-}
-
 class _ChatTitle extends StatelessWidget {
-  const _ChatTitle({
-    required this.title,
-    required this.activity,
-    required this.onTap,
-  });
+  const _ChatTitle({required this.title, required this.activity});
 
   final String title;
   final String? activity;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: const Size(48, 48),
-        foregroundColor: colors.onSurface,
-      ),
-      child: Semantics(
-        hint: '切换会话',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colors.onSurface,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (activity case final String label) ...[
+          const SizedBox(width: 6),
+          Tooltip(
+            message: label,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                color: colors.secondaryContainer.withValues(alpha: 0.55),
+                shape: StadiumBorder(
+                  side: BorderSide(color: colors.secondaryContainer),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.circle, size: 8, color: colors.primary),
+                    const SizedBox(width: 4),
+                    Text(
+                      '工作中',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: 2),
-            const Icon(Icons.expand_more, size: 18),
-            if (activity case final String label) ...[
-              const SizedBox(width: 6),
-              Tooltip(
-                message: label,
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    color: colors.secondaryContainer.withValues(alpha: 0.55),
-                    shape: StadiumBorder(
-                      side: BorderSide(color: colors.secondaryContainer),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle, size: 8, color: colors.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          '工作中',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -846,7 +807,7 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
     setState(() => _working = true);
     try {
       await widget.chat.createSession(title);
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (_) {
       await widget.chat.refreshDirectory();
       if (mounted) {
