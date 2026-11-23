@@ -8,6 +8,8 @@ import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
 import 'execution_details_page.dart';
 import 'session_management.dart';
+import 'sms_sync.dart';
+import 'sms_sync_page.dart';
 import 'workspace_files.dart';
 import 'workspace_files_page.dart';
 
@@ -17,11 +19,13 @@ class ChatPage extends StatefulWidget {
     required this.chat,
     required this.appearance,
     required this.onConnection,
+    this.connectionUsesHttp = false,
   });
 
   final ChatController chat;
   final AppearanceSettings appearance;
   final VoidCallback onConnection;
+  final bool connectionUsesHttp;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -195,6 +199,19 @@ class _ChatPageState extends State<ChatPage> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: widget.onConnection,
               ),
+              if (SmsSync.supported)
+                ListTile(
+                  leading: const Icon(Icons.sms_outlined),
+                  title: const Text('短信同步'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => SmsSyncPage(
+                        connectionUsesHttp: widget.connectionUsesHttp,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

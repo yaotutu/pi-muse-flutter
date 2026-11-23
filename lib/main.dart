@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +9,7 @@ import 'src/api.dart';
 import 'src/appearance.dart';
 import 'src/chat.dart';
 import 'src/chat_page.dart';
+import 'src/sms_sync.dart';
 
 void main() => runApp(const PiMuseApp());
 
@@ -41,6 +43,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
 
   Future<void> _restore() async {
     await Future.wait([_restoreConnection(), _appearance.restore()]);
+    unawaited(SmsSync.resume());
     if (mounted) setState(() => _loading = false);
   }
 
@@ -80,6 +83,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
         key: _connectionKey,
         value: jsonEncode({'address': address.toString(), 'token': token}),
       );
+      await SmsSync.resume(connectionChanged: true);
       if (mounted) setState(() => _useConnection(address, token));
     } finally {
       auth.close();
@@ -88,7 +92,10 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _chat?.reconnect();
+    if (state == AppLifecycleState.resumed) {
+      _chat?.reconnect();
+      if (!_loading) unawaited(SmsSync.resume());
+    }
   }
 
   @override
@@ -130,6 +137,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
             key: ObjectKey(chat),
             chat: chat,
             appearance: _appearance,
+            connectionUsesHttp: _address?.scheme == 'http',
             onConnection: () async {
               final hasRun = chat.conversations.values.any(
                 (conversation) => conversation.submission?.running == true,
@@ -294,7 +302,10 @@ class _ConnectionPageState extends State<ConnectionPage> {
                     if (_address.text.trimLeft().startsWith('http://'))
                       const Padding(
                         padding: EdgeInsets.only(top: 8),
-                        child: Text('HTTP 连接未加密，请在可信网络中使用。'),
+                        child: Text(
+                          'HTTP 连接未加密，请在可信网络中使用。'
+                          '已开启短信同步时，短信也会通过此连接发送。',
+                        ),
                       ),
                     if ((_error ?? widget.notice) case final String message)
                       Padding(

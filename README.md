@@ -22,11 +22,17 @@
 
 ### 设置
 
-底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」或「服务器连接」进入对应页面，返回时回到设置首页。
+底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」「服务器连接」或「短信同步」进入对应页面，返回时回到设置首页。
 
 ### 更换配色
 
 打开「设置 → 外观」，在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的配色。设置仅保存在本机，浅色和深色仍自动跟随系统。
+
+### 同步新短信
+
+打开「设置 → 短信同步」，开启「同步新短信」并授予 Android 接收短信权限。开启后新收到的短信原文和发件人会发送到当前连接的 Pi Muse 服务端。HTTP 连接传输时未加密。后台可继续同步，断网时短信加密保存在本机，恢复网络后继续上传。关闭同步或撤回权限会暂停接收和上传，已排队的短信会保留。
+
+页面显示待同步数量和最近一次确认服务端已接收的时间。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
 
 ### 发送附件
 
@@ -76,11 +82,17 @@ In the drawer, open **更多操作** (More actions) next to a topic session to r
 
 ### Settings
 
-Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance) or **服务器连接** (Server connection) from the list. Back returns to Settings home.
+Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance), **服务器连接** (Server connection), or **短信同步** (SMS sync) from the list. Back returns to Settings home.
 
 ### Change the color palette
 
 Open **设置 → 外观** (Settings → Appearance) and choose Indigo (default), Forest Green, Warm Brown, or Violet under **配色** (Color palette). The change takes effect immediately. The app remembers the last saved palette on this device and still follows the system's light or dark mode.
+
+### Sync new SMS messages
+
+Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短信** (Sync new SMS messages), and grant Android permission to receive SMS. The app sends the original text and sender of new SMS messages to your connected Pi Muse server. HTTP connections transmit this data without encryption. Sync can continue in the background. While offline, the app encrypts pending messages on the device and resumes delivery when the network returns. Turning sync off or revoking permission pauses capture and uploads and keeps pending messages.
+
+The page shows how many messages are pending and when the app last confirmed that the server accepted one. If the server has paused intake, tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
 
 ### Send attachments
 

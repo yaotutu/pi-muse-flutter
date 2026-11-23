@@ -6,16 +6,27 @@ import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
     private var attachmentPicker: AttachmentPicker? = null
+    private var smsSync: SmsSyncChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        attachmentPicker = AttachmentPicker(this, flutterEngine.dartExecutor.binaryMessenger)
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        attachmentPicker = AttachmentPicker(this, messenger)
+        smsSync = SmsSyncChannel(this, messenger)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         attachmentPicker?.close()
         attachmentPicker = null
+        smsSync?.close()
+        smsSync = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == SMS_PERMISSION_REQUEST) smsSync?.onPermissionResult()
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
