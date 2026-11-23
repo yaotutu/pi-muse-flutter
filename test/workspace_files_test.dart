@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:pi_muse_flutter/main.dart';
 import 'package:pi_muse_flutter/src/api.dart';
+import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
 
@@ -61,10 +61,19 @@ void main() {
       final api = _FileApi();
       final chat = ChatController(api, () => api);
       addTearDown(chat.dispose);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(appearance.dispose);
       await tester.pumpWidget(
         MaterialApp(
-          theme: museTheme(Brightness.light),
-          home: ChatPage(chat: chat, onConnection: () {}),
+          theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+          home: ChatPage(
+            chat: chat,
+            appearance: appearance,
+            onConnection: () {},
+          ),
         ),
       );
       final menuButton = find.byTooltip('打开导航菜单');

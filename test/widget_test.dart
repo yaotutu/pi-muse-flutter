@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:pi_muse_flutter/main.dart';
 import 'package:pi_muse_flutter/src/api.dart';
+import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
 import 'package:pi_muse_flutter/src/visible_text.dart';
@@ -30,6 +30,11 @@ void main() {
     final address = Uri.parse('http://localhost');
     final chat = ChatController(MuseApi(address), () => MuseApi(address));
     addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
     chat.synchronized = true;
     chat.active.revision = 'initial';
     chat.active.dirty = false;
@@ -41,8 +46,12 @@ void main() {
     var openedConnection = false;
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
-        home: ChatPage(chat: chat, onConnection: () => openedConnection = true),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ChatPage(
+          chat: chat,
+          appearance: appearance,
+          onConnection: () => openedConnection = true,
+        ),
       ),
     );
     final bar = find.byType(AppBar);
@@ -102,6 +111,11 @@ void main() {
     final address = Uri.parse('http://localhost');
     final chat = ChatController(MuseApi(address), () => MuseApi(address));
     addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
     chat.synchronized = true;
     final localTime = DateTime(2025, 3, 4, 10, 15);
     ChatMessage saved(String id, String role, String text, DateTime time) =>
@@ -117,8 +131,8 @@ void main() {
     ];
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
-        home: ChatPage(chat: chat, onConnection: () {}),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
       ),
     );
     final localizations = MaterialLocalizations.of(
@@ -145,6 +159,11 @@ void main() {
     final address = Uri.parse('http://localhost');
     final chat = ChatController(MuseApi(address), () => MuseApi(address));
     addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
     chat.synchronized = true;
     chat.approvals['approval'] = Approval.fromJson({
       'id': 'approval',
@@ -162,14 +181,14 @@ void main() {
     });
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
           ).copyWith(textScaler: TextScaler.linear(2)),
           child: child!,
         ),
-        home: ChatPage(chat: chat, onConnection: () {}),
+        home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
       ),
     );
     final banner = find.byType(MaterialBanner);

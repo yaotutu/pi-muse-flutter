@@ -4,7 +4,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
-import 'package:pi_muse_flutter/main.dart';
+import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_message_view.dart';
 
@@ -23,7 +23,7 @@ void main() {
           '> 验收示例引用。\n\n---\n\n![示例图片](https://example.invalid/image.png)';
       await tester.pumpWidget(
         MaterialApp(
-          theme: museTheme(Brightness.light),
+          theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
@@ -52,7 +52,9 @@ void main() {
       ]) {
         expect(heading.fontSize! - style.p!.fontSize!, lessThanOrEqualTo(2));
       }
-      final colors = museTheme(Brightness.light).colorScheme;
+      final colors = museTheme(
+        MusePalette.indigo.colors(Brightness.light),
+      ).colorScheme;
       expect(style.p!.height, 1.75);
       expect(style.strong!.color, colors.primary);
       expect(style.code!.backgroundColor, colors.surfaceContainerLow);
@@ -77,7 +79,7 @@ void main() {
         '**11:45–13:00 午饭**\n楼外楼就在公园边。';
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         home: const Scaffold(
           body: ChatMessageView(
             message: ChatMessage('reply', 'assistant', reply),
@@ -108,7 +110,7 @@ void main() {
     const text = '## 雨天路线\n\n## $longLine\n\n```text\n## $longLine\n```';
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         home: const Scaffold(
           body: SingleChildScrollView(
             child: ChatMessageView(
@@ -139,7 +141,7 @@ void main() {
       '你好',
       sentAt: DateTime(2026, 11, 23, 10, 15),
     );
-    final theme = museTheme(Brightness.light);
+    final theme = museTheme(MusePalette.indigo.colors(Brightness.light));
     await tester.pumpWidget(
       MaterialApp(
         theme: theme,
@@ -196,7 +198,7 @@ void main() {
           '```\nplain code\n```';
       await tester.pumpWidget(
         MaterialApp(
-          theme: museTheme(Brightness.light),
+          theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
           home: const Scaffold(
             body: SingleChildScrollView(
               child: ChatMessageView(
@@ -250,7 +252,7 @@ void main() {
     );
     await tester.pumpWidget(
       MaterialApp(
-        theme: museTheme(Brightness.light),
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         home: Scaffold(
           body: Column(
             children: [
@@ -285,19 +287,32 @@ void main() {
       return a > b ? (a + 0.05) / (b + 0.05) : (b + 0.05) / (a + 0.05);
     }
 
-    for (final brightness in Brightness.values) {
-      final colors = museTheme(brightness).colorScheme;
-      for (final (text, surface) in [
-        (colors.onSurface, colors.surface),
-        (colors.onSurface, colors.surfaceContainerLow),
-        (colors.onSurfaceVariant, colors.surfaceContainerLow),
-        (colors.onPrimaryContainer, colors.primaryContainer),
-        (colors.primary, colors.surfaceContainerLow),
-        (colors.tertiary, colors.surfaceContainerLow),
-        (colors.onTertiaryContainer, colors.tertiaryContainer),
-        (colors.onPrimary, colors.primary),
-      ]) {
-        expect(contrast(text, surface), greaterThanOrEqualTo(4.5));
+    for (final palette in MusePalette.values) {
+      for (final brightness in Brightness.values) {
+        final colors = palette.colors(brightness);
+        final label = '${palette.id} ${brightness.name}';
+        final pairs = [
+          ('page', colors.onSurface, colors.surface),
+          ('reply', colors.onSurface, colors.surfaceContainerLowest),
+          ('bubble', colors.onPrimaryContainer, colors.primaryContainer),
+          ('emphasis', colors.primary, colors.surfaceContainerLowest),
+          ('inline code', colors.primary, colors.surfaceContainerLow),
+          ('quote', colors.onSurfaceVariant, colors.surfaceContainerLow),
+          ('tab label', colors.primary, colors.surface),
+          (
+            'tab indicator',
+            colors.onSecondaryContainer,
+            colors.secondaryContainer,
+          ),
+          ('send', colors.onTertiary, colors.tertiary),
+        ];
+        for (final (role, text, surface) in pairs) {
+          expect(
+            contrast(text, surface),
+            greaterThanOrEqualTo(4.5),
+            reason: '$label: $role',
+          );
+        }
       }
     }
   });

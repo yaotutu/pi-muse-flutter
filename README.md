@@ -4,7 +4,11 @@
 
 这是独立的 Flutter Android 客户端预览，不需要检出或运行 React Native 工程。应用使用独立包名 `com.pimuse.pi_muse_flutter`，通过 HTTP/SSE 连接 Pi Muse 服务端。打开后填写服务端根地址及访问密钥，点击「连接」。访问密钥用于换取 Session Token。连接成功后，可从主聊天进入会话列表、创建或切换会话。
 
-聊天页采用深靛蓝主题。点左上角打开侧边栏，点居中的会话标题切换或新建会话。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧浅蓝气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。已保存的回复可复制。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
+点左上角打开侧边栏，点居中的会话标题切换或新建会话。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。已保存的回复可复制。回复实时显示，输入框右端的停止按钮结束本机发起的本轮回复。有文件修改待确认时，顶栏下方才会出现提示，点击「查看修改」可核对修改前后全文，再选择批准或拒绝。如果发送结果不明，点「核对发送结果」后再决定是否发送。
+
+### 更换配色
+
+打开「设置 → 外观」，在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的配色。设置仅保存在本机，浅色和深色仍自动跟随系统。
 
 ### 发送附件
 
@@ -36,7 +40,11 @@ flutter run -d <android-device-id>
 
 This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, use the main chat to create or switch sessions.
 
-The chat uses a deep indigo theme. Open the drawer with the top-left menu button, or tap the centered session title to switch or create a session. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in light blue bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. You can copy saved replies. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+Open the drawer with the top-left menu button, or tap the centered session title to switch or create a session. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. You can copy saved replies. Replies stream into the conversation. The stop button at the end of the composer ends the current reply started on this device. When a file change needs approval, a banner appears below the app bar. Tap **查看修改** to read the full before and after text before approving or denying the change. If delivery is uncertain, tap **核对发送结果** to verify it before deciding whether to send again.
+
+### Change the color palette
+
+Open **设置 → 外观** (Settings → Appearance) and choose Indigo (default), Forest Green, Warm Brown, or Violet under **配色** (Color palette). The change takes effect immediately. The app remembers the last saved palette on this device and still follows the system's light or dark mode.
 
 ### Send attachments
 

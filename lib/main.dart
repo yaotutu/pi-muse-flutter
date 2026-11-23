@@ -2,81 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/api.dart';
+import 'src/appearance.dart';
 import 'src/chat.dart';
 import 'src/chat_page.dart';
 
 void main() => runApp(const PiMuseApp());
-
-ThemeData museTheme(Brightness brightness) {
-  final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xff111722) : const Color(0xfff7f9fb);
-  final colors =
-      ColorScheme.fromSeed(
-        seedColor: const Color(0xff1e40af),
-        brightness: brightness,
-      ).copyWith(
-        primary: dark ? const Color(0xffb8c4ff) : const Color(0xff00288e),
-        onPrimary: dark ? const Color(0xff082168) : const Color(0xffffffff),
-        primaryContainer: dark
-            ? const Color(0xff25395b)
-            : const Color(0xffdbeafe),
-        onPrimaryContainer: dark
-            ? const Color(0xffe0ecff)
-            : const Color(0xff001b3d),
-        secondaryContainer: dark
-            ? const Color(0xff293b59)
-            : const Color(0xffd6e3ff),
-        onSecondaryContainer: dark
-            ? const Color(0xffd6e3ff)
-            : const Color(0xff001b3d),
-        tertiary: dark ? const Color(0xffa8b8ff) : const Color(0xff1e40af),
-        surface: background,
-        onSurface: dark ? const Color(0xffecf0f8) : const Color(0xff191c1e),
-        onSurfaceVariant: dark
-            ? const Color(0xffc0c7d6)
-            : const Color(0xff444653),
-        surfaceContainerLowest: dark
-            ? const Color(0xff1b2433)
-            : const Color(0xffffffff),
-        surfaceContainerLow: dark
-            ? const Color(0xff1e283a)
-            : const Color(0xfff2f4f6),
-        surfaceContainer: dark
-            ? const Color(0xff253042)
-            : const Color(0xffeceef0),
-        surfaceContainerHigh: dark
-            ? const Color(0xff303c4f)
-            : const Color(0xffe6e8ea),
-        outline: dark ? const Color(0xffa1abbf) : const Color(0xff757684),
-        outlineVariant: dark
-            ? const Color(0xff364157)
-            : const Color(0xffe2e8f0),
-      );
-  final inputBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(18),
-    borderSide: BorderSide(color: colors.outlineVariant),
-  );
-  return ThemeData(
-    colorScheme: colors,
-    scaffoldBackgroundColor: background,
-    dividerColor: colors.outlineVariant,
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: colors.surfaceContainerLow,
-      border: inputBorder,
-      enabledBorder: inputBorder,
-      focusedBorder: inputBorder.copyWith(
-        borderSide: BorderSide(color: colors.primary, width: 1.5),
-      ),
-    ),
-    textTheme: const TextTheme(
-      bodyLarge: TextStyle(height: 1.5),
-      bodyMedium: TextStyle(height: 1.5),
-    ),
-  );
-}
 
 class PiMuseApp extends StatefulWidget {
   const PiMuseApp({super.key});
@@ -88,6 +21,12 @@ class PiMuseApp extends StatefulWidget {
 class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   static const _storage = FlutterSecureStorage();
   static const _connectionKey = 'pi-muse-connection';
+  static const _paletteKey = 'pi-muse-palette';
+  final _preferences = SharedPreferencesAsync();
+  late final _appearance = AppearanceSettings(
+    readPalette: () => _preferences.getString(_paletteKey),
+    writePalette: (id) => _preferences.setString(_paletteKey, id),
+  );
   ChatController? _chat;
   Uri? _address;
   String? _storageError;
@@ -97,7 +36,12 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _restoreConnection();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    await Future.wait([_restoreConnection(), _appearance.restore()]);
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _restoreConnection() async {
@@ -113,7 +57,6 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
     } catch (_) {
       _storageError = '本机连接记录无法读取，请重新连接';
     }
-    if (mounted) setState(() => _loading = false);
   }
 
   void _useConnection(Uri address, String token) {
@@ -151,21 +94,28 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _appearance.dispose();
     _chat?.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _appearance,
+    builder: (_, _) => _buildApp(),
+  );
+
+  Widget _buildApp() {
     final chat = _chat;
+    final palette = _appearance.palette;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Pi Muse',
       locale: const Locale('zh'),
       supportedLocales: const [Locale('zh')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: museTheme(Brightness.light),
-      darkTheme: museTheme(Brightness.dark),
+      theme: museTheme(palette.colors(Brightness.light)),
+      darkTheme: museTheme(palette.colors(Brightness.dark)),
       home: Builder(
         builder: (context) {
           if (_loading) {
@@ -179,6 +129,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
           return ChatPage(
             key: ObjectKey(chat),
             chat: chat,
+            appearance: _appearance,
             onConnection: () async {
               final hasRun = chat.conversations.values.any(
                 (conversation) => conversation.submission?.running == true,

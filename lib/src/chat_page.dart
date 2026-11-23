@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'appearance.dart';
+import 'appearance_page.dart';
 import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
@@ -8,9 +10,15 @@ import 'workspace_files.dart';
 import 'workspace_files_page.dart';
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key, required this.chat, required this.onConnection});
+  const ChatPage({
+    super.key,
+    required this.chat,
+    required this.appearance,
+    required this.onConnection,
+  });
 
   final ChatController chat;
+  final AppearanceSettings appearance;
   final VoidCallback onConnection;
 
   @override
@@ -90,19 +98,34 @@ class _ChatPageState extends State<ChatPage> {
   void _openSettings() {
     _focus.unfocus();
     final onConnection = widget.onConnection;
+    final appearance = widget.appearance;
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (context) => Scaffold(
           appBar: AppBar(title: const Text('设置')),
           body: SafeArea(
-            child: ListTile(
-              leading: const Icon(Icons.dns_outlined),
-              title: const Text('服务器连接'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).pop();
-                onConnection();
-              },
+            child: ListView(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('外观'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => AppearancePage(settings: appearance),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.dns_outlined),
+                  title: const Text('服务器连接'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onConnection();
+                  },
+                ),
+              ],
             ),
           ),
         ),
