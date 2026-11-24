@@ -410,16 +410,19 @@ class _ChatCodeBlockBuilder extends MarkdownElementBuilder {
               ),
             ),
           ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.all(12),
-          child: SelectableText(
-            code,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurface,
-              fontSize: 13,
-              height: 1.6,
-              fontFamily: 'monospace',
+        // 选择区放在横向视口外，普通横滑先交给代码视口，长按仍可选字。
+        SelectionArea(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              code,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurface,
+                fontSize: 13,
+                height: 1.6,
+                fontFamily: 'monospace',
+              ),
             ),
           ),
         ),

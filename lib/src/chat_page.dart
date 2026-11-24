@@ -431,113 +431,125 @@ class _ChatPageState extends State<ChatPage> {
                                   ),
                                 ),
                               )
-                            : Align(
-                                alignment: Alignment.topCenter,
-                                child: ListView.separated(
-                                  key: PageStorageKey(conversation.id),
-                                  // 短对话从顶部开始，长对话仍以最新消息为滚动起点。
-                                  shrinkWrap: true,
-                                  // 只有内容超出视口时才接收纵向拖动，避免短对话被拉伸。
-                                  primary: false,
-                                  reverse: true,
-                                  // 从落点计算已识别的拖动，避免正文手势竞争吃掉起步距离。
-                                  dragStartBehavior: DragStartBehavior.down,
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    8,
-                                    16,
-                                    24,
-                                  ),
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  itemCount: messages.length,
-                                  separatorBuilder: (_, _) =>
-                                      const SizedBox(height: 24),
-                                  itemBuilder: (context, index) {
-                                    final position =
-                                        messages.length - index - 1;
-                                    final message = messages[position];
-                                    final sentAt = message.sentAt?.toLocal();
-                                    final previous = position == 0
-                                        ? null
-                                        : messages[position - 1].sentAt
-                                              ?.toLocal();
-                                    final confirmed =
-                                        pending == null ||
-                                        (message.id != pending.message.id &&
-                                            !pending.replies.containsKey(
-                                              message.id,
-                                            ));
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (sentAt != null &&
-                                            !DateUtils.isSameDay(
-                                              sentAt,
-                                              previous,
-                                            ))
-                                          _ChatDateLabel(sentAt),
-                                        ChatMessageView(
-                                          key: ValueKey(message.id),
-                                          message: message,
-                                          confirmed: confirmed,
-                                          feedbackState: conversation
-                                              .feedbackState(message.id),
-                                          onQuote:
-                                              confirmed &&
-                                                  conversation.canEditDraft
-                                              ? () {
-                                                  if (_chat.quoteMessage(
-                                                    conversation,
-                                                    binding,
-                                                    message.id,
-                                                  )) {
-                                                    _focus.requestFocus();
+                            : NotificationListener<
+                                OverscrollIndicatorNotification
+                              >(
+                                onNotification: (notification) {
+                                  // 聊天到边缘时直接停住，不拉伸消息；不影响内层横向滚动。
+                                  if (notification.depth == 0) {
+                                    notification.disallowIndicator();
+                                  }
+                                  return false;
+                                },
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ListView.separated(
+                                    key: PageStorageKey(conversation.id),
+                                    // 短对话从顶部开始，长对话仍以最新消息为滚动起点。
+                                    shrinkWrap: true,
+                                    // 只有内容超出视口时才接收纵向拖动，避免短对话被拉伸。
+                                    primary: false,
+                                    reverse: true,
+                                    // 从落点计算已识别的拖动，避免正文手势竞争吃掉起步距离。
+                                    dragStartBehavior: DragStartBehavior.down,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      8,
+                                      16,
+                                      24,
+                                    ),
+                                    keyboardDismissBehavior:
+                                        ScrollViewKeyboardDismissBehavior
+                                            .onDrag,
+                                    itemCount: messages.length,
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(height: 24),
+                                    itemBuilder: (context, index) {
+                                      final position =
+                                          messages.length - index - 1;
+                                      final message = messages[position];
+                                      final sentAt = message.sentAt?.toLocal();
+                                      final previous = position == 0
+                                          ? null
+                                          : messages[position - 1].sentAt
+                                                ?.toLocal();
+                                      final confirmed =
+                                          pending == null ||
+                                          (message.id != pending.message.id &&
+                                              !pending.replies.containsKey(
+                                                message.id,
+                                              ));
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (sentAt != null &&
+                                              !DateUtils.isSameDay(
+                                                sentAt,
+                                                previous,
+                                              ))
+                                            _ChatDateLabel(sentAt),
+                                          ChatMessageView(
+                                            key: ValueKey(message.id),
+                                            message: message,
+                                            confirmed: confirmed,
+                                            feedbackState: conversation
+                                                .feedbackState(message.id),
+                                            onQuote:
+                                                confirmed &&
+                                                    conversation.canEditDraft
+                                                ? () {
+                                                    if (_chat.quoteMessage(
+                                                      conversation,
+                                                      binding,
+                                                      message.id,
+                                                    )) {
+                                                      _focus.requestFocus();
+                                                    }
                                                   }
-                                                }
-                                              : null,
-                                          onReaction: feedbackEnabled
-                                              ? (reaction) =>
-                                                    _reportFeedbackResult(
-                                                      conversation,
-                                                      message.id,
-                                                      _chat.changeReaction(
+                                                : null,
+                                            onReaction: feedbackEnabled
+                                                ? (reaction) =>
+                                                      _reportFeedbackResult(
                                                         conversation,
-                                                        binding,
                                                         message.id,
-                                                        reaction,
-                                                      ),
-                                                    )
-                                              : null,
-                                          onToggleSaved: feedbackEnabled
-                                              ? (saved) =>
-                                                    _reportFeedbackResult(
-                                                      conversation,
-                                                      message.id,
-                                                      _chat.changeSaved(
+                                                        _chat.changeReaction(
+                                                          conversation,
+                                                          binding,
+                                                          message.id,
+                                                          reaction,
+                                                        ),
+                                                      )
+                                                : null,
+                                            onToggleSaved: feedbackEnabled
+                                                ? (saved) =>
+                                                      _reportFeedbackResult(
                                                         conversation,
-                                                        binding,
                                                         message.id,
-                                                        saved,
-                                                      ),
-                                                    )
-                                              : null,
-                                          onVerifyFeedback: feedbackEnabled
-                                              ? () => _reportFeedbackResult(
-                                                  conversation,
-                                                  message.id,
-                                                  _chat.verifyFeedback(
+                                                        _chat.changeSaved(
+                                                          conversation,
+                                                          binding,
+                                                          message.id,
+                                                          saved,
+                                                        ),
+                                                      )
+                                                : null,
+                                            onVerifyFeedback: feedbackEnabled
+                                                ? () => _reportFeedbackResult(
                                                     conversation,
-                                                    binding,
                                                     message.id,
-                                                  ),
-                                                )
-                                              : null,
-                                        ),
-                                      ],
-                                    );
-                                  },
+                                                    _chat.verifyFeedback(
+                                                      conversation,
+                                                      binding,
+                                                      message.id,
+                                                    ),
+                                                  )
+                                                : null,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                       ),

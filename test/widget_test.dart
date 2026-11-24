@@ -669,7 +669,200 @@ void main() {
       everyElement(closeTo(distances['message gap']!, 1)),
       reason: '$distances',
     );
+    final horizontal = tester
+        .state<ScrollableState>(
+          find
+              .descendant(of: codeViewport, matching: find.byType(Scrollable))
+              .first,
+        )
+        .position;
+    final codeGesture = await tester.startGesture(starts['code text']!);
+    for (var step = 0; step < 11; step++) {
+      await codeGesture.moveBy(const Offset(-10, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final codeTravel = horizontal.pixels;
+    await codeGesture.up();
+    await tester.pumpAndSettle();
+    expect(codeTravel, greaterThan(80));
+    expect(position.pixels, closeTo(initialOffset, 1));
+    await tester.longPressAt(starts['code text']!);
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    expect(position.pixels, closeTo(initialOffset, 1));
+    expect(tester.takeException(), isNull);
   }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets('both screen halves move the transcript in both directions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final chat = _chatWithHistory([
+      for (var i = 0; i < 16; i++) ...[
+        ChatMessage('user-$i', 'user', 'Question $i'),
+        ChatMessage(
+          'reply-$i',
+          'assistant',
+          'Answer $i\n\nA paragraph with a few words.\n\nAnother paragraph.',
+        ),
+      ],
+    ]);
+    addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
+      ),
+    );
+    final list = find.byType(ListView);
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    expect(position.pixels, 0);
+    expect(
+      position.maxScrollExtent,
+      greaterThan(2 * position.viewportDimension),
+    );
+
+    Offset textInHalf({required bool upper}) {
+      final view = tester.getRect(list).deflate(24);
+      final half = upper
+          ? Rect.fromLTRB(view.left, view.top, view.right, view.center.dy)
+          : Rect.fromLTRB(view.left, view.center.dy, view.right, view.bottom);
+      final textWidgets = find.descendant(
+        of: list,
+        matching: find.byType(EditableText),
+      );
+      for (final element in textWidgets.evaluate()) {
+        final text = find.byElementPredicate(
+          (candidate) => identical(candidate, element),
+        );
+        final rect = tester.getRect(text);
+        if (half.contains(rect.center)) return rect.center;
+      }
+      throw StateError(
+        'No message text found in ${upper ? 'upper' : 'lower'} half',
+      );
+    }
+
+    Future<void> checkDrag(
+      double origin,
+      double dy, {
+      required bool upper,
+    }) async {
+      position.jumpTo(origin);
+      await tester.pumpAndSettle();
+      final start = textInHalf(upper: upper);
+      final gesture = await tester.startGesture(start);
+      for (var step = 0; step < 12; step++) {
+        await gesture.moveBy(Offset(0, dy / 12));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final moved = position.pixels - origin;
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        moved,
+        closeTo(dy, 1),
+        reason: '${upper ? 'upper' : 'lower'} message from $origin',
+      );
+    }
+
+    for (final upper in [true, false]) {
+      await checkDrag(0, 280, upper: upper);
+      expect(find.text('Answer 14').hitTestable(), findsOneWidget);
+      await checkDrag(440, -120, upper: upper);
+      await checkDrag(440, 120, upper: upper);
+    }
+
+    // The composer keyboard changes the available height, not the scroll owner.
+    addTearDown(tester.view.resetViewInsets);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 250);
+    await tester.pumpAndSettle();
+    await checkDrag(440, 120, upper: false);
+    final readingOffset = position.pixels;
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(position.pixels, closeTo(readingOffset, 1));
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets(
+    'a barely overflowing transcript stops at either edge without stretching',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 520);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final chat = _chatWithHistory([
+        const ChatMessage('older', 'assistant', 'Older\nLine two\nLine three'),
+        const ChatMessage('newer', 'assistant', 'Newer\nLine two\nLine three'),
+      ]);
+      addTearDown(chat.dispose);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(appearance.dispose);
+      final boundaries = <OverscrollNotification>[];
+      final indicators = <OverscrollIndicatorNotification>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NotificationListener<OverscrollNotification>(
+            onNotification: (notification) {
+              if (notification.depth == 0) boundaries.add(notification);
+              return false;
+            },
+            child: NotificationListener<OverscrollIndicatorNotification>(
+              onNotification: (notification) {
+                if (notification.depth == 0) indicators.add(notification);
+                return false;
+              },
+              child: ChatPage(
+                chat: chat,
+                appearance: appearance,
+                onConnection: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final list = find.byType(ListView);
+      final position = tester
+          .state<ScrollableState>(
+            find.descendant(of: list, matching: find.byType(Scrollable)).first,
+          )
+          .position;
+      final end = position.maxScrollExtent;
+      expect(end, inExclusiveRange(0, 130));
+      for (final (offset, dy, message) in [
+        (0.0, -170.0, 'Newer\nLine two\nLine three'),
+        (end, 170.0, 'Older\nLine two\nLine three'),
+      ]) {
+        position.jumpTo(offset);
+        await tester.pumpAndSettle();
+        boundaries.clear();
+        indicators.clear();
+        await tester.drag(find.text(message), Offset(0, dy));
+        await tester.pumpAndSettle();
+        expect(position.pixels, closeTo(offset, 0.1));
+        expect(boundaries, isNotEmpty);
+        expect(
+          indicators.where((notification) => notification.accepted),
+          isEmpty,
+        );
+      }
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
 
   testWidgets('the idle chat starts directly below the Material app bar', (
     tester,
