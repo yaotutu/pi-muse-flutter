@@ -82,7 +82,7 @@ jobs:
           flutter pub get --enforce-lockfile
           flutter analyze
           flutter test
-      - name: Build and verify signed APK
+      - name: Build and verify signed APKs
         if: steps.source.outputs.mode != ''
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -96,20 +96,44 @@ jobs:
           trap 'rm -f -- "$ANDROID_KEYSTORE_PATH"' EXIT
           node tools/android-signing.js
           unset ANDROID_KEYSTORE_BASE64
+          apk_output=build/app/outputs/flutter-apk
+          staging="$RUNNER_TEMP/android-apk"
+          mkdir "$staging"
           flutter build apk --release --no-pub
+          cp "$apk_output/app-release.apk" "$staging/"
+          flutter build apk --release --no-pub --split-per-abi
+          abis=(armeabi-v7a arm64-v8a x86_64)
+          for abi in "${abis[@]}"; do
+            cp "$apk_output/app-$abi-release.apk" "$staging/"
+          done
 
-          apk=build/app/outputs/flutter-apk/app-release.apk
-          test -s "$apk"
-          test "$(wc -c < "$apk")" -le $((256 * 1024 * 1024))
           build_tools="$ANDROID_HOME/build-tools/36.0.0"
           keytool -exportcert -keystore "$ANDROID_KEYSTORE_PATH" -alias "$ANDROID_KEY_ALIAS" \
             -storepass:env ANDROID_KEYSTORE_PASSWORD > "$RUNNER_TEMP/release-cert.der"
           expected=$(sha256sum "$RUNNER_TEMP/release-cert.der" | cut -d ' ' -f 1)
-          "$build_tools/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/apk-signers.txt"
-          actual=$(awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print $NF }' "$RUNNER_TEMP/apk-signers.txt")
-          test "$expected" = "$actual"
-          "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -F "package: name='com.pimuse.pi_muse_flutter' versionCode='$VERSION_CODE' versionName='$VERSION'" "$RUNNER_TEMP/apk-badging.txt"
+          for apk in "$staging"/*.apk; do
+            echo "Verifying $(basename "$apk")"
+            test -s "$apk"
+            test "$(wc -c < "$apk")" -le $((256 * 1024 * 1024))
+            "$build_tools/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/apk-signers.txt"
+            actual=$(awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print $NF }' "$RUNNER_TEMP/apk-signers.txt")
+            test "$expected" = "$actual"
+            "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "package: name='com.pimuse.pi_muse_flutter' versionCode='$VERSION_CODE' versionName='$VERSION'" "$RUNNER_TEMP/apk-badging.txt"
+            entries=$(unzip -Z1 "$apk")
+            architectures=$(awk -F / '$1 == "lib" && $3 ~ /\.so$/ { print $2 }' <<< "$entries" | LC_ALL=C sort -u)
+            if [[ $(basename "$apk") == app-release.apk ]]; then
+              expected_abis=("${abis[@]}")
+            else
+              abi=${apk##*/app-}
+              expected_abis=("${abi%-release.apk}")
+            fi
+            test "$architectures" = "$(printf '%s\n' "${expected_abis[@]}" | LC_ALL=C sort)"
+            for abi in "${expected_abis[@]}"; do
+              grep -Fx "lib/$abi/libflutter.so" <<< "$entries"
+              grep -Fx "lib/$abi/libapp.so" <<< "$entries"
+            done
+          done
       - name: Pack verified source and tag
         if: steps.source.outputs.mode == 'new' || steps.source.outputs.mode == 'resume'
         env:
@@ -125,7 +149,7 @@ jobs:
         if: steps.source.outputs.mode != ''
         with:
           name: android-apk-${{ github.run_attempt }}
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ runner.temp }}/android-apk/*.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: steps.source.outputs.mode == 'new' || steps.source.outputs.mode == 'resume'
@@ -163,8 +187,11 @@ jobs:
           VERSION: ${{ needs.android.outputs.version }}
         run: |
           tag="v$VERSION"
-          apk="$RUNNER_TEMP/android-apk/app-release.apk"
-          test -s "$apk"
+          apk_dir="$RUNNER_TEMP/android-apk"
+          apks=("$apk_dir"/app-release.apk "$apk_dir"/app-{armeabi-v7a,arm64-v8a,x86_64}-release.apk)
+          for apk in "${apks[@]}"; do
+            test -s "$apk"
+          done
           git fetch "$RUNNER_TEMP/android-source/release.bundle" "refs/tags/$tag"
           target=$(git rev-parse FETCH_HEAD)
           test "$(git rev-parse "$target^")" = "$GITHUB_SHA"
@@ -187,11 +214,21 @@ jobs:
             fi
             test "$state" = true
           else
-            gh release create "$tag" --draft --verify-tag --title "$tag" --generate-notes
+            gh release create "$tag" --draft --verify-tag --title "$tag" \
+              --notes "$(< .github/release-notes.md)" --generate-notes
           fi
-          gh release upload "$tag" "$apk" --clobber
-          uploaded=$(gh release view "$tag" --json assets \
-            --jq '.assets[] | select(.name == "app-release.apk" and .state == "uploaded") | "\(.size) \(.digest)"')
-          digest=$(sha256sum "$apk" | cut -d ' ' -f 1)
-          test "$uploaded" = "$(wc -c < "$apk" | xargs) sha256:$digest"
+          gh release upload "$tag" "${apks[@]}" --clobber
+          assets=$(gh release view "$tag" --json assets)
+          apk_count=$(jq '.assets | map(select(.name | endswith(".apk"))) | length' <<< "$assets")
+          test "$apk_count" -eq "${#apks[@]}"
+          for apk in "${apks[@]}"; do
+            name=$(basename "$apk")
+            uploaded=$(jq -r --arg name "$name" \
+              '.assets[] | select(.name == $name and .state == "uploaded") | "\(.size) \(.digest)"' <<< "$assets")
+            digest=$(sha256sum "$apk" | cut -d ' ' -f 1)
+            if [[ "$uploaded" != "$(wc -c < "$apk" | xargs) sha256:$digest" ]]; then
+              echo "Release asset verification failed: $name" >&2
+              exit 1
+            fi
+          done
           gh release edit "$tag" --draft=false --latest

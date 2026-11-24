@@ -32,6 +32,7 @@ internal class AppUpdateChannel(private val activity: MainActivity, messenger: B
                         val task = ApkDownload(
                             context,
                             requireNotNull(call.argument<String>("version")),
+                            requireNotNull(call.argument<String>("assetName")),
                             requireNotNull(call.argument<Number>("size")).toLong(),
                             requireNotNull(call.argument<String>("sha256")),
                         )

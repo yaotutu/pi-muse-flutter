@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,11 +16,13 @@ final _digestPattern = RegExp(r'^sha256:[0-9a-f]{64}$');
 class AppRelease {
   const AppRelease({
     required this.version,
+    required this.assetName,
     required this.size,
     required this.sha256,
   });
 
   final String version;
+  final String assetName;
   final int size;
   final String sha256;
 }
@@ -48,7 +51,7 @@ bool isNewerVersion(String candidate, String installed) {
 const latestApkDownloadUrl =
     'https://github.com/$releaseRepository/releases/latest/download/$universalApkName';
 
-AppRelease parseRelease(Object? value) {
+AppRelease parseRelease(Object? value, {Abi? abi}) {
   if (value is! Map<String, dynamic>) {
     throw const ReleaseCheckException('发布信息格式不正确');
   }
@@ -64,17 +67,26 @@ AppRelease parseRelease(Object? value) {
   if (assets is! List) {
     throw const ReleaseCheckException('发布信息缺少有效安装包');
   }
-  final matches = assets.whereType<Map<String, dynamic>>().where(
-    (asset) => asset['name'] == universalApkName,
-  );
+  final preferred = switch (abi) {
+    Abi.androidArm64 => 'app-arm64-v8a-release.apk',
+    Abi.androidArm => 'app-armeabi-v7a-release.apk',
+    Abi.androidX64 => 'app-x86_64-release.apk',
+    _ => universalApkName,
+  };
+  final apkAssets = assets.whereType<Map<String, dynamic>>();
+  var matches = apkAssets.where((asset) => asset['name'] == preferred);
+  if (matches.isEmpty && preferred != universalApkName) {
+    matches = apkAssets.where((asset) => asset['name'] == universalApkName);
+  }
   if (matches.length != 1) {
     throw const ReleaseCheckException('正式版本没有唯一的 Android 安装包');
   }
   final asset = matches.single;
+  final assetName = asset['name'] as String;
   final size = asset['size'];
   final digest = asset['digest'];
   final officialUrl =
-      'https://github.com/$releaseRepository/releases/download/$tag/$universalApkName';
+      'https://github.com/$releaseRepository/releases/download/$tag/$assetName';
   if (asset['browser_download_url'] != officialUrl) {
     throw const ReleaseCheckException('安装包不属于官方发布地址');
   }
@@ -87,6 +99,7 @@ AppRelease parseRelease(Object? value) {
   }
   return AppRelease(
     version: tag.substring(1),
+    assetName: assetName,
     size: size,
     sha256: digest.substring(7),
   );
@@ -123,5 +136,8 @@ Future<AppRelease?> _readLatestRelease(HttpClient client) async {
     }
     body.add(chunk);
   }
-  return parseRelease(jsonDecode(utf8.decode(body.takeBytes())));
+  return parseRelease(
+    jsonDecode(utf8.decode(body.takeBytes())),
+    abi: Abi.current(),
+  );
 }

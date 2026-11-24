@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,27 @@ void main() {
   };
   final release = parseRelease(metadata);
   final invalid = throwsA(isA<ReleaseCheckException>());
+  final splitChecksum = List.filled(64, 'b').join();
+  const splitNames = {
+    Abi.androidArm64: 'app-arm64-v8a-release.apk',
+    Abi.androidArm: 'app-armeabi-v7a-release.apk',
+    Abi.androidX64: 'app-x86_64-release.apk',
+  };
+  final splitAssets = {
+    for (final entry in splitNames.entries)
+      entry.key: <String, Object>{
+        'name': entry.value,
+        'size': 512,
+        'digest': 'sha256:$splitChecksum',
+        'browser_download_url':
+            'https://github.com/$releaseRepository/releases/download/v0.1.2/${entry.value}',
+      },
+  };
+  final allApks = {
+    ...metadata,
+    'assets': [asset, ...splitAssets.values],
+  };
+  final splitRelease = parseRelease(allApks, abi: Abi.androidArm64);
 
   test('按三段数字比较版本', () {
     expect(isNewerVersion('0.1.10', '0.1.9'), isTrue);
@@ -64,6 +86,56 @@ void main() {
             {...asset, ...replacement},
           ],
         }),
+        invalid,
+      );
+    }
+  });
+
+  test('优先使用当前 Android 进程架构的安装包', () {
+    for (final entry in splitNames.entries) {
+      final selected = parseRelease(allApks, abi: entry.key);
+      expect(selected.assetName, entry.value);
+      expect(selected.size, 512);
+      expect(selected.sha256, splitChecksum);
+    }
+  });
+
+  test('旧发布、缺少匹配包或架构不受支持时使用通用包', () {
+    final otherAbiOnly = {
+      ...metadata,
+      'assets': [asset, splitAssets[Abi.androidX64]],
+    };
+    for (final selected in [
+      parseRelease(metadata, abi: Abi.androidArm64),
+      parseRelease(otherAbiOnly, abi: Abi.androidArm64),
+      parseRelease(allApks, abi: Abi.androidIA32),
+      parseRelease(allApks),
+    ]) {
+      expect(selected.assetName, universalApkName);
+      expect(selected.size, 1024);
+      expect(selected.sha256, checksum);
+    }
+  });
+
+  test('匹配包重复或元数据无效时检查失败', () {
+    final split = splitAssets[Abi.androidArm64]!;
+    for (final splits in [
+      [split, split],
+      [
+        {...split, 'browser_download_url': asset['browser_download_url']},
+      ],
+      [
+        {...split, 'digest': 'sha256:123'},
+      ],
+      [
+        {...split, 'size': 0},
+      ],
+    ]) {
+      expect(
+        () => parseRelease({
+          ...metadata,
+          'assets': [asset, ...splits],
+        }, abi: Abi.androidArm64),
         invalid,
       );
     }
@@ -152,6 +224,12 @@ void main() {
           case 'device':
             return device;
           case 'download':
+            expect(call.arguments, {
+              'version': '0.1.2',
+              'assetName': 'app-arm64-v8a-release.apk',
+              'size': 512,
+              'sha256': splitChecksum,
+            });
             return ++attempts == 1 ? first.future : true;
           case 'cancel':
             cancellations++;
@@ -164,7 +242,7 @@ void main() {
         }
       });
       final controller = AppUpdateController(
-        lookupRelease: (_) async => release,
+        lookupRelease: (_) async => splitRelease,
       );
       addTearDown(controller.dispose);
       controller.setForeground(true);

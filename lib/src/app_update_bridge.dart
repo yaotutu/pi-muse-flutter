@@ -26,6 +26,7 @@ class AppUpdateBridge {
     try {
       return await _channel.invokeMethod<bool>('download', {
             'version': release.version,
+            'assetName': release.assetName,
             'size': release.size,
             'sha256': release.sha256,
           }) ==

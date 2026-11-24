@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 internal class ApkDownload(
     private val context: Context,
     private val version: String,
+    private val assetName: String,
     private val size: Long,
     private val sha256: String,
 ) {
@@ -25,6 +26,7 @@ internal class ApkDownload(
 
     init {
         require(Regex("[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}").matches(version))
+        require(assetName in assetNames)
         require(size in 1..MAX_BYTES)
         require(Regex("[0-9a-f]{64}").matches(sha256))
     }
@@ -52,7 +54,7 @@ internal class ApkDownload(
     }
 
     private fun transfer(file: File, onProgress: (Long) -> Unit) {
-        var url = "https://github.com/yaotutu/pi-muse-flutter/releases/download/v$version/app-release.apk".toHttpUrl()
+        var url = "https://github.com/yaotutu/pi-muse-flutter/releases/download/v$version/$assetName".toHttpUrl()
         repeat(4) {
             val request = Request.Builder().url(url).header("Accept-Encoding", "identity").build()
             val currentCall = client.newCall(request)
@@ -129,6 +131,12 @@ internal class ApkDownload(
 
     private companion object {
         const val MAX_BYTES = 256L * 1024 * 1024
+        val assetNames = setOf(
+            "app-release.apk",
+            "app-arm64-v8a-release.apk",
+            "app-armeabi-v7a-release.apk",
+            "app-x86_64-release.apk",
+        )
         val assetHosts = setOf("release-assets.githubusercontent.com", "objects.githubusercontent.com")
         val client = OkHttpClient.Builder()
             .callTimeout(10, TimeUnit.MINUTES)

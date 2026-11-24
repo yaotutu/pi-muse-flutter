@@ -36,14 +36,14 @@
 
 ### 应用更新
 
-正式版启动时检查 GitHub，应用在前台期间每小时再检查一次。也可从「设置 → 应用更新」手动检查。发现新版本后自动下载 `app-release.apk`，下载中可取消。同一次运行中，取消的版本可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
+正式版启动时检查 GitHub，应用在前台期间每小时再检查一次。也可从「设置 → 应用更新」手动检查。发现新版本后，应用优先下载与当前 Android 进程架构匹配的较小安装包，缺少匹配包时自动下载通用包 `app-release.apk`。下载中可取消，同一次运行中可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
 
-首次安装请从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载正式 APK。后续覆盖安装需要相同的包名和签名。若设备上装的是开发调试包，请先卸载调试包，再安装正式 APK；卸载会清除该客户端的本机数据。
+首次安装或不确定设备架构时，请从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载 `app-release.apk`。发布页提供拆分包时，也可按设备架构选择 `arm64-v8a`、`armeabi-v7a` 或 `x86_64`。后续覆盖安装需要相同的包名和签名。若设备上装的是开发调试包，请先卸载调试版。卸载会清除该客户端的本机数据。
 
 ### 自动打包与发布
 
-- 推送到 `main` 后，[发布流程](.github/workflows/release.yml) 递增 `pubspec.yaml` 的补丁版本和 Android 构建号，例如 `0.1.0+1` 变为 `0.1.1+2`。分析、测试与签名 APK 校验成功后，流程推送版本提交及标签，上传 APK 到草稿，再公开 GitHub Release。`pubspec.yaml` 的版本字段由发布流程维护。
-- 手动运行 `release` 使用所选提交的现有版本，构建并保留 Actions APK 产物。版本提交、标签和正式发布由 `main` 的推送触发。
+- 推送到 `main` 后，[发布流程](.github/workflows/release.yml) 递增 `pubspec.yaml` 的补丁版本和 Android 构建号，例如 `0.1.0+1` 变为 `0.1.1+2`。流程构建一个通用 APK 和三个拆分 APK，使用同一签名和构建号。分析、测试和 APK 校验通过后，流程推送版本提交及标签，将四个包上传到草稿，核对每个包的大小和 SHA-256 后再公开 GitHub Release。`pubspec.yaml` 的版本字段由发布流程维护。
+- 手动运行 `release` 使用所选提交的现有版本，构建四个 APK 并保存在 Actions 产物中。版本提交、标签和正式发布由 `main` 的推送触发。
 - GitHub 仓库需为 `yaotutu/pi-muse-flutter`，并让手机可匿名访问其 Releases 与 APK。仓库需允许发布流程的 `GITHUB_TOKEN` 写入 `main`、标签和 Releases。
 - Flutter 的正式 APK 使用独立的发布签名，不复用 RN 客户端的 keystore。将 Base64 编码的 keystore、库密码、别名和密钥密码分别配置为仓库 Actions secrets `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。妥善备份 keystore 和密码；后续版本必须使用同一把密钥，才能覆盖更新已安装的正式版。本地开发使用 Debug APK。
 
@@ -109,14 +109,14 @@ The page shows how many messages are pending and when the app last confirmed tha
 
 ### App updates
 
-The release build checks GitHub at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). A new version starts downloading `app-release.apk` automatically. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
+The release build checks GitHub at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). When a new version is available, the app prefers the smaller APK that matches its running Android process architecture. If no matching APK is available, it downloads the universal `app-release.apk`. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
 
-For the first installation, download the signed APK from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases). Android updates require the same package ID and signing certificate. If a development debug build is installed, uninstall it before installing the release APK. Uninstalling clears the client's local data.
+For a first install or if you are unsure which architecture your device uses, download `app-release.apk` from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases). When the release provides split APKs, you can choose the one for `arm64-v8a`, `armeabi-v7a` or `x86_64`. Android updates require the same package ID and signing certificate. If a development debug build is installed, uninstall it before installing the release APK. Uninstalling clears the client's local data.
 
 ### Automated builds and releases
 
-- A push to `main` starts the [release workflow](.github/workflows/release.yml). It increments the patch version and Android build number in `pubspec.yaml`, for example from `0.1.0+1` to `0.1.1+2`. After analysis, tests and signed APK verification succeed, it pushes the version commit and tag, uploads the APK to a draft, then publishes the GitHub Release. The workflow maintains the version field.
-- A manual `release` run builds the selected commit's current version and saves the APK as an Actions artifact. Pushes to `main` trigger version commits, tags and public releases.
+- A push to `main` starts the [release workflow](.github/workflows/release.yml). It increments the patch version and Android build number in `pubspec.yaml`, for example from `0.1.0+1` to `0.1.1+2`. It builds one universal APK and three split APKs, all with the same signing key and build number. After analysis, tests and APK verification succeed, it pushes the version commit and tag and uploads all four APKs to a draft. It verifies the size and SHA-256 of each uploaded APK before publishing. The workflow maintains the version field.
+- A manual `release` run builds all four APKs using the selected commit's current version and saves them as an Actions artifact. Pushes to `main` trigger version commits, tags and public releases.
 - Use `yaotutu/pi-muse-flutter` as the GitHub repository and make its Releases and APKs available to phones without authentication. Allow the release workflow's `GITHUB_TOKEN` to write to `main`, tags and Releases.
 - Flutter release APKs use a dedicated signing key, separate from the RN client's keystore. Configure the Base64-encoded keystore, store password, key alias and key password as Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Back up the keystore and password securely. Future releases need the same key to update installed release builds. Use the Debug APK for development.
 
