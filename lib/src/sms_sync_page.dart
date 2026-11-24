@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'sms_history_section.dart';
 import 'sms_sync.dart';
 
 class SmsSyncPage extends StatefulWidget {
@@ -190,7 +191,7 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
               (pending > failed + canRetry
                   ? waiting
                   : pending == 0
-                  ? '正在等待新短信。可从另一台手机发一条短信测试。'
+                  ? '正在等待新短信。收到后会自动上传，可查看「上次确认成功」。'
                   : '有短信需要处理。');
     final canSync =
         enabled &&
@@ -207,132 +208,150 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
       appBar: AppBar(title: const Text('短信同步')),
       body: SafeArea(
         top: false,
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              children: [
-                SwitchListTile(
-                  title: const Text('同步新短信'),
-                  subtitle: const Text('仅同步开启后收到的新短信'),
-                  value: enabled,
-                  onChanged: _busy || status == null ? null : _change,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _disclosure,
-                        style: caption?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (widget.connectionUsesHttp) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          _httpDisclosure,
-                          style: caption?.copyWith(color: scheme.error),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                if (status == null && _error == null)
-                  const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else ...[
-                  if (status != null)
-                    _infoRow(
-                      Icons.outbox_outlined,
-                      '待同步 $pending 条',
-                      summary,
-                      tone: urgent ? scheme.error : null,
-                    ),
-                  if (needsPermission)
-                    _infoRow(
-                      Icons.gpp_maybe_outlined,
-                      'Android 尚未授予短信权限',
-                      _permissionHelp,
-                    ),
-                  if (failed > 0)
-                    _infoRow(
-                      Icons.error_outline,
-                      '$failed 条未能同步',
-                      '与服务器记录冲突或格式不符，已保留在本机。',
-                      tone: scheme.error,
-                    ),
-                  if (checking > 0)
-                    _infoRow(
-                      Icons.hourglass_top,
-                      '$checking 条正在核对入队结果',
-                      '正在向服务器确认是否已接收。',
-                    ),
-                  if (canRetry > 0)
-                    _infoRow(
-                      Icons.search_off,
-                      '$canRetry 条等待重试',
-                      '尚未在服务器找到，可点下方「立即同步」重试。',
-                    ),
-                  if (lastSuccess > 0)
-                    _infoRow(
-                      Icons.cloud_done_outlined,
-                      '上次确认成功',
-                      '${localizations.formatCompactDate(successTime)} '
-                          '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(successTime))}',
-                    ),
-                  if (_error case final error?)
-                    _infoRow(
-                      Icons.error_outline,
-                      '出错了',
-                      error,
-                      tone: scheme.error,
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      '新短信同步',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  SwitchListTile(
+                    title: const Text('同步新短信'),
+                    subtitle: const Text('仅同步开启后收到的新短信'),
+                    value: enabled,
+                    onChanged: _busy || status == null ? null : _change,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (enabled && !permission)
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : () => _change(true),
-                            icon: const Icon(Icons.gpp_maybe_outlined),
-                            label: const Text('重新授权短信权限'),
+                        Text(
+                          _disclosure,
+                          style: caption?.copyWith(
+                            color: scheme.onSurfaceVariant,
                           ),
-                        if (needsPermission)
-                          OutlinedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(
-                                    SmsSync.openAppSettings,
-                                    errorMessage: '无法打开 Android 应用设置，请从系统设置进入',
-                                  ),
-                            icon: const Icon(Icons.settings_outlined),
-                            label: const Text('打开应用设置'),
-                          )
-                        else
-                          FilledButton.tonalIcon(
-                            onPressed: canSync
-                                ? () => _run(SmsSync.retry)
-                                : null,
-                            icon: const Icon(Icons.sync),
-                            label: const Text('立即同步'),
+                        ),
+                        if (widget.connectionUsesHttp) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            _httpDisclosure,
+                            style: caption?.copyWith(color: scheme.error),
                           ),
-                        if (_busy) ...[
-                          const SizedBox(height: 12),
-                          const LinearProgressIndicator(),
                         ],
                       ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  if (status == null && _error == null)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    if (status != null)
+                      _infoRow(
+                        Icons.outbox_outlined,
+                        '待同步 $pending 条',
+                        summary,
+                        tone: urgent ? scheme.error : null,
+                      ),
+                    if (needsPermission)
+                      _infoRow(
+                        Icons.gpp_maybe_outlined,
+                        'Android 尚未授予短信权限',
+                        _permissionHelp,
+                      ),
+                    if (failed > 0)
+                      _infoRow(
+                        Icons.error_outline,
+                        '$failed 条未能同步',
+                        '与服务器记录冲突或格式不符，已保留在本机。',
+                        tone: scheme.error,
+                      ),
+                    if (checking > 0)
+                      _infoRow(
+                        Icons.hourglass_top,
+                        '$checking 条正在核对入队结果',
+                        '正在向服务器确认是否已接收。',
+                      ),
+                    if (canRetry > 0)
+                      _infoRow(
+                        Icons.search_off,
+                        '$canRetry 条等待重试',
+                        '尚未在服务器找到，可点下方「立即同步」重试。',
+                      ),
+                    if (lastSuccess > 0)
+                      _infoRow(
+                        Icons.cloud_done_outlined,
+                        '上次确认成功',
+                        '${localizations.formatCompactDate(successTime)} '
+                            '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(successTime))}',
+                      ),
+                    if (_error case final error?)
+                      _infoRow(
+                        Icons.error_outline,
+                        '出错了',
+                        error,
+                        tone: scheme.error,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (enabled && !permission)
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : () => _change(true),
+                              icon: const Icon(Icons.gpp_maybe_outlined),
+                              label: const Text('重新授权短信权限'),
+                            ),
+                          if (needsPermission)
+                            OutlinedButton.icon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _run(
+                                      SmsSync.openAppSettings,
+                                      errorMessage:
+                                          '无法打开 Android 应用设置，请从系统设置进入',
+                                    ),
+                              icon: const Icon(Icons.settings_outlined),
+                              label: const Text('打开应用设置'),
+                            )
+                          else
+                            FilledButton.tonalIcon(
+                              onPressed: canSync
+                                  ? () => _run(SmsSync.retry)
+                                  : null,
+                              icon: const Icon(Icons.sync),
+                              label: const Text('立即同步'),
+                            ),
+                          if (_busy) ...[
+                            const SizedBox(height: 12),
+                            const LinearProgressIndicator(),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  SmsHistorySection(
+                    connectionUsesHttp: widget.connectionUsesHttp,
+                    permissionHelp: _permissionHelp,
+                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),

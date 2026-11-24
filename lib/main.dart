@@ -353,7 +353,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
                         padding: EdgeInsets.only(top: 8),
                         child: Text(
                           'HTTP 连接未加密，请在可信网络中使用。'
-                          '已开启短信同步时，短信也会通过此连接发送。',
+                          '同步新短信或导入历史短信时，短信也会通过此连接发送。',
                         ),
                       ),
                     if ((_error ?? widget.notice) case final String message)

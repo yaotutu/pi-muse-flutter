@@ -27,10 +27,23 @@ class MainActivity : FlutterActivity() {
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
+    override fun onResume() {
+        super.onResume()
+        smsSync?.onResume()
+    }
+
+    override fun onPause() {
+        smsSync?.onPause()
+        super.onPause()
+    }
+
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == SMS_PERMISSION_REQUEST) smsSync?.onPermissionResult()
+        when (requestCode) {
+            SMS_PERMISSION_REQUEST -> smsSync?.onPermissionResult()
+            SMS_HISTORY_PERMISSION_REQUEST -> smsSync?.onHistoryPermissionResult()
+        }
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")

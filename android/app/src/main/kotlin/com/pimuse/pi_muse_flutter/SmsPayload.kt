@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
@@ -49,9 +50,7 @@ internal data class SmsPayload(
                 digest.update(pdu)
             }
             val fingerprint = digest.digest().joinToString("") { "%02x".format(it) }
-            val receivedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }.format(Date(timestamp))
+            val receivedAt = utcTimestamp(timestamp)
             return SmsPayload(
                 "flutter-sms-$fingerprint",
                 sender?.takeIf { it.isNotBlank() && it.length <= 500 && validWireText(it) },
@@ -77,7 +76,14 @@ internal data class SmsPayload(
                 actual.dropLast(1) + ".000Z" == expected
         }
 
-        private fun validWireText(text: String): Boolean {
+        fun utcTimestamp(timestamp: Long): String =
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).apply {
+                calendar = GregorianCalendar(TimeZone.getTimeZone("UTC"), Locale.ROOT).apply {
+                    gregorianChange = Date(Long.MIN_VALUE)
+                }
+            }.format(Date(timestamp))
+
+        fun validWireText(text: String): Boolean {
             var index = 0
             while (index < text.length) {
                 val char = text[index++]

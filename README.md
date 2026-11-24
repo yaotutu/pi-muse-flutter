@@ -34,7 +34,15 @@
 
 如果 Android 拒绝授权，点「打开应用设置」，在「权限 → 短信」中授权。如果系统提示权限受限，先在应用信息右上角菜单点「允许受限设置」，再授权或返回应用重试。首次授权后在应用内确认「同步新短信」已经开启，再发一条新短信测试。
 
-页面显示待同步数量和最近一次确认服务端已接收的时间。如果服务器关闭了信息后台或暂停接收，短信会保存在本机。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
+「待同步」是尚未上传的新短信数量。新短信可能很快自动上传，队列保持为零时，可看「上次确认成功」是否更新。如果服务器关闭了信息后台或暂停接收，短信会保存在本机。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
+
+### 导入历史短信
+
+在「设置 → 短信同步 → 历史短信导入」点「导入历史短信」。第一次先授予 Android 读取短信权限，授权后返回，再确认「开始上传」。无需打开「同步新短信」。导入覆盖 Android 当前可读的所有已收和已发 SMS，不限日期；不含草稿、待发送、MMS、RCS 和已删除的短信。短信原文、收发对象和时间会发往已连接的 Pi Muse 服务端，可能包含敏感信息；HTTP 连接不加密。
+
+请在导入时留在页面。退到后台、离开页面或点「暂停导入」会暂停，返回后点「继续导入」。应用显示已导入、已跳过和未能导入的数量；不符合接口要求的记录不会被截断上传。同一安装重复扫描时会跳过已确认的历史记录，无法保证与以前通过实时同步或其他客户端上传的记录去重。
+
+导入只把短信写入服务端归档队列，不启动模型处理。之后如果在服务端执行归档处理，服务端默认只保留最新 2,000 条已处理的归档原文；全量上传不等于永久备份。
 
 ### 应用更新
 
@@ -109,7 +117,15 @@ Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短
 
 If Android denies permission, tap **打开应用设置** (Open app settings) and grant access under **Permissions → SMS**. If Android reports a restricted setting, tap **Allow restricted settings** in the upper-right menu on the App info screen. Then grant SMS access or return to the app to retry. After your first grant, make sure **Sync new SMS messages** is on and send a new SMS to test it.
 
-The page shows how many messages are pending and when the app last confirmed that the server accepted one. If the server disables or pauses intake, pending messages stay on the device. Tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
+The pending count is for new messages not yet uploaded. A new message may upload immediately, so check **上次确认成功** (Last confirmed) if the count stays at zero. If the server disables or pauses intake, pending messages stay on the device. Tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
+
+### Import SMS history
+
+In **设置 → 短信同步 → 历史短信导入** (Settings → SMS sync → SMS history), tap **导入历史短信** (Import SMS history). Grant Android permission to read SMS on the first import, then return and confirm **开始上传** (Start upload). The new-message sync switch can stay off. Import covers all sent and received SMS that Android lets the app read, with no date cutoff. It excludes drafts, unsent messages, MMS, RCS, and deleted messages. Message text, senders or recipients, and timestamps are sent to your connected Pi Muse server and may include sensitive data. HTTP connections are not encrypted.
+
+Keep this screen open during import. Leaving the screen, putting the app in the background, or tapping **暂停导入** (Pause import) pauses it. Return and tap **继续导入** (Continue import) to resume. The app shows imported, skipped, and unsuccessful counts. It does not truncate messages to fit the server contract. A repeat scan on the same installation skips previously confirmed history, but messages uploaded through realtime sync or another client may appear again.
+
+Import only writes messages to the server’s archive queue; it does not start model processing. If you later run archive processing on the server, it retains only the latest 2,000 processed archive messages by default. A full upload is not a permanent backup.
 
 ### App updates
 

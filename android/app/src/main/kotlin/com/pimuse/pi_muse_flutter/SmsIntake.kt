@@ -26,15 +26,29 @@ internal enum class IntakeResult { ACCEPTED, CONFLICT, INVALID, ABSENT, AUTH, DI
 
 internal class SmsIntake(origin: HttpUrl, private val token: String) {
     private val endpoint = origin.newBuilder().encodedPath("/api/information/items").build()
+    private val archiveEndpoint = origin.newBuilder().encodedPath("/api/information/archive/items").build()
+    val originKey = historyDigest(origin.toString())
 
-    fun submission(payload: SmsPayload): Call {
-        val body = JSONObject().put("items", JSONArray().put(payload.json())).toString().toByteArray()
-        return uploadClient.newCall(request(endpoint).post(object : RequestBody() {
+    fun submission(payload: SmsPayload): Call = submit(
+        endpoint,
+        JSONObject().put("items", JSONArray().put(payload.json())).toString().toByteArray(),
+    )
+
+    fun archiveSubmission(batch: HistoryBatch): Call = submit(archiveEndpoint, batch.body())
+
+    private fun submit(url: HttpUrl, body: ByteArray): Call =
+        uploadClient.newCall(request(url).post(object : RequestBody() {
             override fun contentType(): MediaType = jsonType
             override fun contentLength(): Long = body.size.toLong()
             override fun isOneShot(): Boolean = true
             override fun writeTo(sink: BufferedSink) { sink.write(body) }
         }).build())
+
+    fun archiveReadPage(cursor: String?): Call {
+        // 去重键跨队列共享；必须识别同键但落在实时队列的冲突。
+        val url = endpoint.newBuilder().addQueryParameter("limit", HISTORY_READ_PAGE.toString())
+        cursor?.let { url.addQueryParameter("cursor", it) }
+        return client.newCall(request(url.build()).get().build())
     }
 
     fun readback(payload: SmsPayload, execute: (Call) -> Response): IntakeResult {
@@ -131,9 +145,11 @@ internal class SmsIntake(origin: HttpUrl, private val token: String) {
             return SmsIntake(origin, token)
         }
 
+        fun archiveResponse(response: Response): JSONObject = response.json()
+
         private fun Response.json(): JSONObject {
             val responseBody = body ?: throw JSONException("missing response")
-            // 单页至多 20 条，限制收到的字节数，避免异常响应耗尽内存。
+            // 列表每页至多 20 条；归档回执还会回显请求条目。限制异常响应的内存占用。
             if (responseBody.source().request(3L * 1024 * 1024 + 1)) throw IOException("response too large")
             return JSONObject(responseBody.string())
         }
