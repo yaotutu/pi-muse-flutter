@@ -653,6 +653,8 @@ void main() {
     final distances = <String, double>{};
     for (final start in starts.entries) {
       final gesture = await tester.startGesture(start.value);
+      // Holding before moving used to activate selection instead of scrolling.
+      await tester.pump(const Duration(milliseconds: 720));
       for (var step = 0; step < 5; step++) {
         await gesture.moveBy(const Offset(0, -10));
         await tester.pump(const Duration(milliseconds: 16));
@@ -663,12 +665,13 @@ void main() {
       position.jumpTo(initialOffset);
       await tester.pumpAndSettle();
     }
-    expect(distances['message gap'], greaterThan(0), reason: '$distances');
     expect(
       distances.values,
-      everyElement(closeTo(distances['message gap']!, 1)),
+      everyElement(closeTo(50, 1)),
       reason: '$distances',
     );
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+    expect(find.byType(SelectionArea), findsNothing);
     final horizontal = tester
         .state<ScrollableState>(
           find
@@ -686,9 +689,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(codeTravel, greaterThan(80));
     expect(position.pixels, closeTo(initialOffset, 1));
-    await tester.longPressAt(starts['code text']!);
+    await tester.tap(find.byTooltip('选择文字').hitTestable().first);
     await tester.pumpAndSettle();
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    expect(find.byType(SelectionArea), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsNothing);
     expect(position.pixels, closeTo(initialOffset, 1));
     expect(tester.takeException(), isNull);
   }, variant: const TargetPlatformVariant({TargetPlatform.android}));
@@ -738,10 +744,20 @@ void main() {
       final half = upper
           ? Rect.fromLTRB(view.left, view.top, view.right, view.center.dy)
           : Rect.fromLTRB(view.left, view.center.dy, view.right, view.bottom);
-      final textWidgets = find.descendant(
-        of: list,
-        matching: find.byType(EditableText),
-      );
+      final textWidgets = find
+          .descendant(
+            of: list,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Text &&
+                  RegExp(
+                    r'^(?:(?:Question|Answer) \d+|A paragraph with a few words\.|Another paragraph\.)$',
+                  ).hasMatch(
+                    widget.data ?? widget.textSpan?.toPlainText() ?? '',
+                  ),
+            ),
+          )
+          .hitTestable();
       for (final element in textWidgets.evaluate()) {
         final text = find.byElementPredicate(
           (candidate) => identical(candidate, element),

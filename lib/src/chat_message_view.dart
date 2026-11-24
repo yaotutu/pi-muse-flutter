@@ -37,6 +37,25 @@ class ChatMessageView extends StatelessWidget {
     }
   }
 
+  void _selectText(BuildContext context, String text) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('选择文字')),
+          body: SafeArea(
+            child: SelectionArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                child: Text(text, style: Theme.of(context).textTheme.bodyLarge),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _actions(BuildContext context, String text, bool hasText) {
     if (!confirmed) return const [];
     final colors = Theme.of(context).colorScheme;
@@ -46,13 +65,20 @@ class ChatMessageView extends StatelessWidget {
     final liked = message.reaction == MessageReaction.like;
     final disliked = message.reaction == MessageReaction.dislike;
     return [
-      if (hasText)
+      if (hasText) ...[
         IconButton(
           tooltip: '复制',
           color: colors.onSurfaceVariant,
           icon: const Icon(Icons.content_copy_outlined, size: 18),
           onPressed: () => _copy(context, text),
         ),
+        IconButton(
+          tooltip: '选择文字',
+          color: colors.onSurfaceVariant,
+          icon: const Icon(Icons.text_fields, size: 18),
+          onPressed: () => _selectText(context, text),
+        ),
+      ],
       if (message.canQuote)
         IconButton(
           tooltip: '引用回复',
@@ -177,7 +203,7 @@ class ChatMessageView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (hasText)
-                        SelectableText(
+                        Text(
                           text,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colors.onPrimaryContainer,
@@ -270,12 +296,7 @@ class ChatMessageView extends StatelessWidget {
           MarkdownBody(
             data: hasText ? text : '无可显示的正文',
             fitContent: false,
-            selectable: true,
-            // 选区工具栏使用应用已注册的 Material UI 本地化。
-            contextMenuBuilder: (_, state) =>
-                AdaptiveTextSelectionToolbar.editableText(
-                  editableTextState: state,
-                ),
+            // 浏览时只渲染正文，选字放在独立页面，避免与聊天竖滑竞争。
             // 保留回复原文的单换行。Markdown 图片只展示替代文本。
             softLineBreak: true,
             blockSyntaxes: const [_ChatHeadingSyntax()],
@@ -410,19 +431,16 @@ class _ChatCodeBlockBuilder extends MarkdownElementBuilder {
               ),
             ),
           ),
-        // 选择区放在横向视口外，普通横滑先交给代码视口，长按仍可选字。
-        SelectionArea(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              code,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurface,
-                fontSize: 13,
-                height: 1.6,
-                fontFamily: 'monospace',
-              ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            code,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurface,
+              fontSize: 13,
+              height: 1.6,
+              fontFamily: 'monospace',
             ),
           ),
         ),

@@ -63,7 +63,7 @@ void main() {
         (style.blockquoteDecoration! as BoxDecoration).border,
         Border(left: BorderSide(width: 4, color: colors.tertiary)),
       );
-      expect(reply.selectable, isTrue);
+      expect(reply.selectable, isFalse);
       expect(find.text('示例图片'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
       expect(tester.takeException(), isNull);
@@ -90,22 +90,28 @@ void main() {
     );
     final markdown = find.byType(MarkdownBody);
     final blocks = tester
-        .widgetList<flutter.EditableText>(
-          find.descendant(
-            of: markdown,
-            matching: find.byType(flutter.EditableText),
-          ),
+        .widgetList<Text>(
+          find.descendant(of: markdown, matching: find.byType(Text)),
         )
-        .map((block) => block.controller.text);
+        .map((block) => block.data ?? block.textSpan?.toPlainText());
     expect(blocks, contains('$title\n$description'));
     expect(blocks, contains('11:45–13:00 午饭\n楼外楼就在公园边。'));
     expect(tester.widget<MarkdownBody>(markdown).data, reply);
   });
 
-  testWidgets('long pressing assistant text opens its localized toolbar', (
+  testWidgets('partial copy is available only on the message selection page', (
     tester,
   ) async {
-    const reply = 'Select this reply';
+    const reply = 'Select **this** reply';
+    final clipboard = <Object?>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboard.add(call.arguments);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await tester.pumpWidget(
       const MaterialApp(
         locale: Locale('zh'),
@@ -119,10 +125,31 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.longPress(find.text(reply));
+    await tester.longPress(find.text('Select this reply'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+    await tester.tap(find.byTooltip('选择文字'));
+    await tester.pumpAndSettle();
+    final source = find.text(reply);
+    final painter = tester.renderObject<RenderParagraph>(
+      find.descendant(of: source, matching: find.byType(flutter.RichText)),
+    );
+    final word = painter
+        .getBoxesForSelection(
+          const flutter.TextSelection(baseOffset: 0, extentOffset: 6),
+        )
+        .single;
+    await tester.longPressAt(painter.localToGlobal(word.toRect().center));
     await tester.pumpAndSettle();
     expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
-    expect(find.text('复制'), findsOneWidget);
+    await tester.tap(find.text('复制'));
+    await tester.pumpAndSettle();
+    expect(clipboard, [
+      {'text': 'Select'},
+    ]);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Select this reply'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: const TargetPlatformVariant({TargetPlatform.android}));
 
@@ -346,6 +373,7 @@ void main() {
     expect(find.text('Pi Muse'), findsNothing);
     expect(find.text('10:16'), findsOneWidget);
     expect(find.byTooltip('复制'), findsOneWidget);
+    expect(find.byTooltip('选择文字'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(ChatMessageView).first,

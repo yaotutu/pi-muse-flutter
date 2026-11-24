@@ -12,7 +12,7 @@
 
 ### 操作消息
 
-聊天超出屏幕时，从消息内或消息之间上下滑动都能滚动整段聊天。滑到最早或最新一条时，列表停在边界，不会拉伸。长按正文可选择文字，过宽的代码块可以左右滑动。
+聊天超出屏幕时，从消息内或消息之间上下滑动都能滚动整段聊天。滑到最早或最新一条时，列表停在边界，不会拉伸。过宽的代码块可以左右滑动。点已保存消息下方的「选择文字」，可在单独页面长按选择原文（含 Markdown 标记）；「复制」仍可直接复制整条消息。
 
 已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞、不喜欢和书签按钮。点书签收藏，再点一次取消收藏。收藏由服务器保存，可以与点赞或不喜欢同时使用。点亮的图标表示当前状态。结果不明时，先点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
 
@@ -97,7 +97,7 @@ Tap **执行详情** (Execution details) in the top right of chat. **动态** (A
 
 ### Message actions
 
-When the conversation extends beyond the screen, swipe vertically on a message or between messages to scroll the transcript. The transcript stops without stretching at the oldest and newest edges. Touch and hold text to select it. Swipe horizontally to read wide code blocks.
+When the conversation extends beyond the screen, swipe vertically on a message or between messages to scroll the transcript. The transcript stops without stretching at the oldest and newest edges. Swipe horizontally to read wide code blocks. To copy part of a saved message, tap **选择文字** (Select text) below it, then touch and hold the source text on the separate page. The source includes any Markdown markup. **复制** (Copy) still copies the whole message directly.
 
 Use the buttons below a saved message to copy or quote it. Eligible messages also have Like, Dislike, and Bookmark buttons. Tap the bookmark to save it, then tap again to remove it. The server stores bookmarks independently of likes and dislikes. Highlighted icons show the current state. If the result is uncertain, first tap **核对反馈状态** (Check feedback status) below the message. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
 
