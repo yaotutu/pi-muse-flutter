@@ -16,11 +16,14 @@ class SmsSyncPage extends StatefulWidget {
 class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
   static const _disclosure = '开启后，新收到的短信原文和发件人会发送到已连接的 Pi Muse 服务器。';
   static const _httpDisclosure = '当前使用 HTTP，短信和连接令牌在传输时未加密。';
+  static const _permissionHelp =
+      '在应用设置的「权限 → 短信」中授权。若 Android 提示权限受限，请先在应用信息右上角菜单点「允许受限设置」，再授权或返回这里重试。';
 
   Map<String, Object?>? _status;
   late final Timer _poll;
   bool _busy = false;
   bool _reading = false;
+  bool _refreshAfterRead = false;
   String? _error;
 
   @override
@@ -42,11 +45,14 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_busy) _refresh();
+    if (state == AppLifecycleState.resumed) _refresh(requestFresh: true);
   }
 
-  Future<void> _refresh() async {
-    if (_reading) return;
+  Future<void> _refresh({bool requestFresh = false}) async {
+    if (_reading) {
+      _refreshAfterRead |= requestFresh;
+      return;
+    }
     _reading = true;
     try {
       final status = await SmsSync.status();
@@ -57,6 +63,10 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
       }
     } finally {
       _reading = false;
+      if (_refreshAfterRead && mounted) {
+        _refreshAfterRead = false;
+        unawaited(_refresh());
+      }
     }
   }
 
@@ -86,13 +96,14 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
       if (confirmed != true || !mounted) return;
     }
     await _run(() async {
-      if (!await SmsSync.setEnabled(enabled) && mounted) {
-        setState(() => _error = '请在 Android 应用权限中允许接收短信');
-      }
+      await SmsSync.setEnabled(enabled);
     });
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    String errorMessage = '无法更新本机短信同步，请重试',
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -100,7 +111,7 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     try {
       await action();
     } catch (_) {
-      if (mounted) setState(() => _error = '无法更新本机短信同步，请重试');
+      if (mounted) setState(() => _error = errorMessage);
     } finally {
       if (mounted) {
         await _refresh();
@@ -148,6 +159,7 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     final status = _status;
     final enabled = status?['enabled'] == true;
     final permission = status?['permission'] == true;
+    final needsPermission = status != null && !permission;
     final pending = status?['pending'] as int? ?? 0;
     final failed = status?['failed'] as int? ?? 0;
     final checking = status?['checking'] as int? ?? 0;
@@ -157,8 +169,8 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     final actionRequired = switch (block) {
       'auth' => '连接已失效，请在设置中重新连接服务器。',
       'connection' => '无法读取服务器连接，请在设置中重新连接。',
-      'disabled' => '服务器已关闭短信处理。启用后可点「立即同步」。',
-      'paused' => '服务器已暂停接收。恢复后可点「立即同步」。',
+      'disabled' => '短信已保存在本机。服务器的信息后台已关闭，开启后点「立即同步」。',
+      'paused' => '短信已保存在本机。服务器恢复接收后点「立即同步」。',
       'local_error' => '本机短信同步遇到错误，请重试。',
       _ => null,
     };
@@ -178,7 +190,7 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
               (pending > failed + canRetry
                   ? waiting
                   : pending == 0
-                  ? '当前没有待同步短信。'
+                  ? '正在等待新短信。可从另一台手机发一条短信测试。'
                   : '有短信需要处理。');
     final canSync =
         enabled &&
@@ -203,7 +215,7 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
               children: [
                 SwitchListTile(
                   title: const Text('同步新短信'),
-                  subtitle: const Text('新短信原文和发件人会发送到已连接的服务器'),
+                  subtitle: const Text('仅同步开启后收到的新短信'),
                   value: enabled,
                   onChanged: _busy || status == null ? null : _change,
                 ),
@@ -242,6 +254,12 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
                       '待同步 $pending 条',
                       summary,
                       tone: urgent ? scheme.error : null,
+                    ),
+                  if (needsPermission)
+                    _infoRow(
+                      Icons.gpp_maybe_outlined,
+                      'Android 尚未授予短信权限',
+                      _permissionHelp,
                     ),
                   if (failed > 0)
                     _infoRow(
@@ -286,6 +304,17 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
                             onPressed: _busy ? null : () => _change(true),
                             icon: const Icon(Icons.gpp_maybe_outlined),
                             label: const Text('重新授权短信权限'),
+                          ),
+                        if (needsPermission)
+                          OutlinedButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => _run(
+                                    SmsSync.openAppSettings,
+                                    errorMessage: '无法打开 Android 应用设置，请从系统设置进入',
+                                  ),
+                            icon: const Icon(Icons.settings_outlined),
+                            label: const Text('打开应用设置'),
                           )
                         else
                           FilledButton.tonalIcon(

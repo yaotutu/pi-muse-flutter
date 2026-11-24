@@ -15,6 +15,9 @@ class SmsSync {
 
   static Future<void> retry() => _channel.invokeMethod<void>('retry');
 
+  static Future<void> openAppSettings() =>
+      _channel.invokeMethod<void>('openAppSettings');
+
   static Future<void> resume({bool connectionChanged = false}) async {
     if (!supported) return;
     try {

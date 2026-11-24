@@ -1,6 +1,10 @@
 package com.pimuse.pi_muse_flutter
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
@@ -16,6 +20,17 @@ internal class SmsSyncChannel(private val activity: MainActivity, messenger: Bin
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "status" -> respond(result) { SmsSync.snapshot(context) }
+                "openAppSettings" -> {
+                    try {
+                        activity.startActivity(Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null),
+                        ))
+                        result.success(null)
+                    } catch (_: ActivityNotFoundException) {
+                        result.error("app_settings_unavailable", null, null)
+                    }
+                }
                 "resume" -> respond(result) {
                     SmsSync.enqueue(context)
                     Unit

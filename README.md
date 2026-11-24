@@ -30,9 +30,11 @@
 
 ### 同步新短信
 
-打开「设置 → 短信同步」，开启「同步新短信」并授予 Android 接收短信权限。开启后新收到的短信原文和发件人会发送到当前连接的 Pi Muse 服务端。HTTP 连接传输时未加密。后台可继续同步，断网时短信加密保存在本机，恢复网络后继续上传。关闭同步或撤回权限会暂停接收和上传，已排队的短信会保留。
+打开「设置 → 短信同步」，开启「同步新短信」并授予 Android 接收短信权限。应用只捕获开启后新收到的短信，并将原文和发件人发到当前连接的 Pi Muse 服务端。HTTP 连接传输时未加密。后台可继续同步，断网时短信加密保存在本机，恢复网络后继续上传。关闭同步或撤回权限会暂停接收和上传，已排队的短信会保留。
 
-页面显示待同步数量和最近一次确认服务端已接收的时间。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
+如果 Android 拒绝授权，点「打开应用设置」，在「权限 → 短信」中授权。如果系统提示权限受限，先在应用信息右上角菜单点「允许受限设置」，再授权或返回应用重试。首次授权后在应用内确认「同步新短信」已经开启，再发一条新短信测试。
+
+页面显示待同步数量和最近一次确认服务端已接收的时间。如果服务器关闭了信息后台或暂停接收，短信会保存在本机。服务器恢复接收后，点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
 
 ### 应用更新
 
@@ -103,9 +105,11 @@ Open **设置 → 外观** (Settings → Appearance) and choose Indigo (default)
 
 ### Sync new SMS messages
 
-Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短信** (Sync new SMS messages), and grant Android permission to receive SMS. The app sends the original text and sender of new SMS messages to your connected Pi Muse server. HTTP connections transmit this data without encryption. Sync can continue in the background. While offline, the app encrypts pending messages on the device and resumes delivery when the network returns. Turning sync off or revoking permission pauses capture and uploads and keeps pending messages.
+Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短信** (Sync new SMS messages), and grant Android permission to receive SMS. The app captures only messages received after you turn sync on and sends their original text and sender to your connected Pi Muse server. HTTP connections transmit this data without encryption. Sync can continue in the background. While offline, the app encrypts pending messages on the device and resumes delivery when the network returns. Turning sync off or revoking permission pauses capture and uploads and keeps pending messages.
 
-The page shows how many messages are pending and when the app last confirmed that the server accepted one. If the server has paused intake, tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
+If Android denies permission, tap **打开应用设置** (Open app settings) and grant access under **Permissions → SMS**. If Android reports a restricted setting, tap **Allow restricted settings** in the upper-right menu on the App info screen. Then grant SMS access or return to the app to retry. After your first grant, make sure **Sync new SMS messages** is on and send a new SMS to test it.
+
+The page shows how many messages are pending and when the app last confirmed that the server accepted one. If the server disables or pauses intake, pending messages stay on the device. Tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
 
 ### App updates
 
