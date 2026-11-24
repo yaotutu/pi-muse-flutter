@@ -45,7 +45,7 @@
 - 推送到 `main` 后，[发布流程](.github/workflows/release.yml) 递增 `pubspec.yaml` 的补丁版本和 Android 构建号，例如 `0.1.0+1` 变为 `0.1.1+2`。分析、测试与签名 APK 校验成功后，流程推送版本提交及标签，上传 APK 到草稿，再公开 GitHub Release。`pubspec.yaml` 的版本字段由发布流程维护。
 - 手动运行 `release` 使用所选提交的现有版本，构建并保留 Actions APK 产物。版本提交、标签和正式发布由 `main` 的推送触发。
 - GitHub 仓库需为 `yaotutu/pi-muse-flutter`，并让手机可匿名访问其 Releases 与 APK。仓库需允许发布流程的 `GITHUB_TOKEN` 写入 `main`、标签和 Releases。
-- 发布签名复用 RN 客户端的 keystore。将 Base64 编码的 keystore、库密码、别名和密钥密码分别配置为仓库 Actions secrets `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。本地开发使用 Debug APK，发布流程要求正式签名。
+- Flutter 的正式 APK 使用独立的发布签名，不复用 RN 客户端的 keystore。将 Base64 编码的 keystore、库密码、别名和密钥密码分别配置为仓库 Actions secrets `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。妥善备份 keystore 和密码；后续版本必须使用同一把密钥，才能覆盖更新已安装的正式版。本地开发使用 Debug APK。
 
 ### 发送附件
 
@@ -118,7 +118,7 @@ For the first installation, download the signed APK from [Flutter Releases](http
 - A push to `main` starts the [release workflow](.github/workflows/release.yml). It increments the patch version and Android build number in `pubspec.yaml`, for example from `0.1.0+1` to `0.1.1+2`. After analysis, tests and signed APK verification succeed, it pushes the version commit and tag, uploads the APK to a draft, then publishes the GitHub Release. The workflow maintains the version field.
 - A manual `release` run builds the selected commit's current version and saves the APK as an Actions artifact. Pushes to `main` trigger version commits, tags and public releases.
 - Use `yaotutu/pi-muse-flutter` as the GitHub repository and make its Releases and APKs available to phones without authentication. Allow the release workflow's `GITHUB_TOKEN` to write to `main`, tags and Releases.
-- Release signing reuses the RN client's keystore. Configure the Base64-encoded keystore, store password, key alias and key password as Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Use the Debug APK for development. The release workflow requires release signing.
+- Flutter release APKs use a dedicated signing key, separate from the RN client's keystore. Configure the Base64-encoded keystore, store password, key alias and key password as Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Back up the keystore and password securely. Future releases need the same key to update installed release builds. Use the Debug APK for development.
 
 ### Send attachments
 
