@@ -7,6 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
 import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
+import 'package:pi_muse_flutter/src/chat_attachment.dart';
 import 'package:pi_muse_flutter/src/chat_message_view.dart';
 
 void main() {
@@ -56,7 +57,8 @@ void main() {
       final colors = museTheme(
         MusePalette.indigo.colors(Brightness.light),
       ).colorScheme;
-      expect(style.p!.height, 1.75);
+      expect(style.p!.height, 1.65);
+      expect(style.blockSpacing, 12);
       expect(style.strong!.color, colors.primary);
       expect(style.code!.backgroundColor, colors.surfaceContainerLow);
       expect(
@@ -286,6 +288,81 @@ void main() {
     );
   });
 
+  testWidgets('six message actions fit on a phone without smaller targets', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final time = DateTime(2026, 11, 23, 10, 15);
+    var quotes = 0;
+    for (final width in [360.0, 412.0]) {
+      tester.view.physicalSize = Size(width, 640);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+          home: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  for (final role in ['user', 'assistant'])
+                    ChatMessageView(
+                      key: ValueKey(role),
+                      message: ChatMessage(
+                        role,
+                        role,
+                        '测试消息',
+                        sentAt: time,
+                        feedbackAvailable: true,
+                      ),
+                      onQuote: () => quotes++,
+                      onReaction: (_) {},
+                      onToggleSaved: (_) {},
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      for (final role in ['user', 'assistant']) {
+        final card = find.byKey(ValueKey(role));
+        final buttons = find.descendant(
+          of: card,
+          matching: find.byType(IconButton),
+        );
+        expect(buttons, findsNWidgets(6));
+        final rowY = tester.getCenter(buttons.first).dy;
+        for (var i = 0; i < 6; i++) {
+          final rect = tester.getRect(buttons.at(i));
+          expect(rect.center.dy, rowY, reason: '$role at $width dp');
+          expect(rect.width, greaterThanOrEqualTo(48));
+          expect(rect.height, greaterThanOrEqualTo(48));
+          expect(tester.getRect(card).contains(rect.center), isTrue);
+        }
+        final timestamp = find.descendant(
+          of: card,
+          matching: find.text('10:15'),
+        );
+        expect(timestamp, findsOneWidget);
+        if (width == 412) expect(tester.getCenter(timestamp).dy, rowY);
+        final quote = find.descendant(
+          of: card,
+          matching: find.widgetWithIcon(
+            IconButton,
+            Icons.format_quote_outlined,
+          ),
+        );
+        final edge = tester.getRect(quote).topLeft + const Offset(1, 1);
+        await tester.tapAt(edge);
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+    }
+    expect(quotes, 4);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
   testWidgets(
     'code panels use fence languages and preserve code on narrow screens',
     (tester) async {
@@ -407,35 +484,62 @@ void main() {
         home: Scaffold(
           body: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ChatMessageView(
-              message: ChatMessage(
-                'question',
-                'user',
-                '测试消息',
-                sentAt: DateTime(2026, 11, 23, 10, 16),
-                feedbackAvailable: true,
-                reaction: MessageReaction.like,
-                saved: true,
-              ),
-              onQuote: () {},
-              feedbackState: FeedbackRequestState.unconfirmed,
-              onReaction: (_) => fail('Unconfirmed feedback is locked'),
-              onToggleSaved: (_) => fail('Unconfirmed feedback is locked'),
-              onVerifyFeedback: () => checks++,
+            child: Column(
+              children: [
+                for (final role in ['user', 'assistant'])
+                  ChatMessageView(
+                    message: ChatMessage(
+                      role,
+                      role,
+                      '测试消息',
+                      sentAt: DateTime(2026, 11, 23, 10, 16),
+                      feedbackAvailable: true,
+                      reaction: MessageReaction.like,
+                      saved: true,
+                      attachments: role == 'user'
+                          ? const [
+                              ChatAttachment(
+                                'memo',
+                                'a-long-attachment-file-name-for-chat.txt',
+                                'text/plain',
+                                120,
+                              ),
+                            ]
+                          : const [],
+                    ),
+                    onQuote: () {},
+                    feedbackState: FeedbackRequestState.unconfirmed,
+                    onReaction: (_) => fail('Unconfirmed feedback is locked'),
+                    onToggleSaved: (_) =>
+                        fail('Unconfirmed feedback is locked'),
+                    onVerifyFeedback: () => checks++,
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
 
-    final like = find.widgetWithIcon(IconButton, Icons.thumb_up);
-    expect(tester.widget<IconButton>(like).isSelected, true);
-    expect(tester.widget<IconButton>(like).onPressed, isNull);
-    final bookmark = find.widgetWithIcon(IconButton, Icons.bookmark);
-    expect(tester.widget<IconButton>(bookmark).isSelected, true);
-    expect(tester.widget<IconButton>(bookmark).onPressed, isNull);
-    await tester.tap(find.byTooltip('核对反馈状态'));
-    expect(checks, 1);
+    expect(find.text('10:16').hitTestable(), findsNWidgets(2));
+    expect(find.byTooltip('已发送'), findsOneWidget);
+    expect(
+      find.text('a-long-attachment-file-name-for-chat.txt'),
+      findsOneWidget,
+    );
+    for (final icon in [Icons.thumb_up, Icons.bookmark]) {
+      final buttons = find.widgetWithIcon(IconButton, icon);
+      expect(buttons, findsNWidgets(2));
+      for (final button in tester.widgetList<IconButton>(buttons)) {
+        expect(button.isSelected, true);
+        expect(button.onPressed, isNull);
+      }
+    }
+    final verify = find.byTooltip('核对反馈状态').hitTestable();
+    expect(verify, findsNWidgets(2));
+    await tester.tap(verify.first);
+    await tester.tap(verify.last);
+    expect(checks, 2);
     expect(tester.takeException(), isNull);
   });
 

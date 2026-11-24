@@ -689,7 +689,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(codeTravel, greaterThan(80));
     expect(position.pixels, closeTo(initialOffset, 1));
-    await tester.tap(find.byTooltip('选择文字').hitTestable().first);
+
+    final select = find.byTooltip('选择文字').hitTestable().first;
+    final fromButton = await tester.startGesture(tester.getCenter(select));
+    for (var step = 0; step < 5; step++) {
+      await fromButton.moveBy(const Offset(0, -10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(position.pixels, closeTo(initialOffset - 50, 1));
+    await fromButton.up();
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsNothing);
+    position.jumpTo(initialOffset);
+    await tester.pumpAndSettle();
+
+    await tester.tap(select);
     await tester.pumpAndSettle();
     expect(find.byType(SelectionArea), findsOneWidget);
     await tester.tap(find.byType(BackButton));

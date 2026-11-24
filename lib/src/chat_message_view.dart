@@ -140,6 +140,27 @@ class ChatMessageView extends StatelessWidget {
     ];
   }
 
+  Widget _footer({
+    required WrapAlignment alignment,
+    required Widget? metadata,
+    required List<Widget> actions,
+  }) {
+    return Wrap(
+      alignment: alignment,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ?metadata,
+        // 元数据放不下时先单独换行，让常用操作保持在同一排。
+        if (actions.isNotEmpty)
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: actions,
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -168,110 +189,110 @@ class ChatMessageView extends StatelessWidget {
             ),
           );
     if (user) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 32),
-        child: FractionallySizedBox(
-          widthFactor: 0.88,
-          alignment: Alignment.centerRight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.primaryContainer,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(4),
-                    bottomLeft: Radius.circular(16),
-                    bottomRight: Radius.circular(16),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: colors.primary.withValues(alpha: 0.06),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 32),
+            child: FractionallySizedBox(
+              widthFactor: 0.88,
+              alignment: Alignment.centerRight,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(4),
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (hasText)
-                        Text(
-                          text,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colors.onPrimaryContainer,
-                            fontSize: 15,
-                            height: 1.625,
-                            letterSpacing: 0,
-                          ),
-                        )
-                      else if (!hasContent)
-                        const Text('无可显示的正文'),
-                      if (hasText && message.attachments.isNotEmpty)
-                        const SizedBox(height: 8),
-                      for (final (index, attachment)
-                          in message.attachments.indexed) ...[
-                        if (index > 0) const SizedBox(height: 6),
-                        ChatAttachmentTile(
-                          key: ValueKey(attachment.id),
-                          attachment: attachment,
-                        ),
-                      ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: colors.primary.withValues(alpha: 0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasText)
+                          Text(
+                            text,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.onPrimaryContainer,
+                              fontSize: 15,
+                              height: 1.625,
+                              letterSpacing: 0,
+                            ),
+                          )
+                        else if (!hasContent)
+                          const Text('无可显示的正文'),
+                        if (hasText && message.attachments.isNotEmpty)
+                          const SizedBox(height: 8),
+                        for (final (index, attachment)
+                            in message.attachments.indexed) ...[
+                          if (index > 0) const SizedBox(height: 6),
+                          ChatAttachmentTile(
+                            key: ValueKey(attachment.id),
+                            attachment: attachment,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-              if (time != null || confirmed)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ?time,
-                          if (confirmed) ...[
-                            if (time != null) const SizedBox(width: 4),
-                            Tooltip(
-                              message: '已发送',
-                              child: Icon(
-                                Icons.done_all,
-                                size: 14,
-                                color: colors.primary,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      ...actions,
-                    ],
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
+          if (time != null || confirmed)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _footer(
+                alignment: WrapAlignment.end,
+                metadata: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ?time,
+                    if (confirmed) ...[
+                      if (time != null) const SizedBox(width: 4),
+                      Tooltip(
+                        message: '已发送',
+                        child: Icon(
+                          Icons.done_all,
+                          size: 14,
+                          color: colors.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                actions: actions,
+              ),
+            ),
+        ],
       );
     }
 
     final body = theme.textTheme.bodyLarge!.copyWith(
       color: colors.onSurface,
       fontSize: 17,
-      height: 1.75,
+      height: 1.65,
       letterSpacing: 0,
     );
     final textScaler = MediaQuery.textScalerOf(context);
     final replyStyles = _replyStyles(body, colors, textScaler);
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      padding: const EdgeInsets.only(top: 14, bottom: 4),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
         border: Border.all(color: colors.outlineVariant),
@@ -293,43 +314,45 @@ class ChatMessageView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          MarkdownBody(
-            data: hasText ? text : '无可显示的正文',
-            fitContent: false,
-            // 浏览时只渲染正文，选字放在独立页面，避免与聊天竖滑竞争。
-            // 保留回复原文的单换行。Markdown 图片只展示替代文本。
-            softLineBreak: true,
-            blockSyntaxes: const [_ChatHeadingSyntax()],
-            imageBuilder: (_, _, alt) => Text(alt ?? '', style: body),
-            builders: {
-              'chat-heading-accent': _ChatHeadingAccentBuilder(),
-              'pre': _ChatCodeBlockBuilder(),
-            },
-            styleSheet: replyStyles,
-            bulletBuilder: (bullet) =>
-                _buildListMarker(bullet, replyStyles, textScaler),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: MarkdownBody(
+              data: hasText ? text : '无可显示的正文',
+              fitContent: false,
+              // 浏览时只渲染正文，选字放在独立页面，避免与聊天竖滑竞争。
+              // 保留回复原文的单换行。Markdown 图片只展示替代文本。
+              softLineBreak: true,
+              blockSyntaxes: const [_ChatHeadingSyntax()],
+              imageBuilder: (_, _, alt) => Text(alt ?? '', style: body),
+              builders: {
+                'chat-heading-accent': _ChatHeadingAccentBuilder(),
+                'pre': _ChatCodeBlockBuilder(),
+              },
+              styleSheet: replyStyles,
+              bulletBuilder: (bullet) =>
+                  _buildListMarker(bullet, replyStyles, textScaler),
+            ),
           ),
           if (time != null || actions.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Divider(height: 1, color: colors.surfaceContainerLow),
+            const SizedBox(height: 6),
+            Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+              color: colors.surfaceContainerLow,
+            ),
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  ?time,
-                  if (actions.isNotEmpty)
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: actions,
-                    ),
-                ],
+              padding: const EdgeInsets.only(left: 4),
+              child: _footer(
+                alignment: time == null
+                    ? WrapAlignment.end
+                    : WrapAlignment.spaceBetween,
+                metadata: time,
+                actions: actions,
               ),
             ),
           ] else
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
         ],
       ),
     );
@@ -525,7 +548,7 @@ MarkdownStyleSheet _replyStyles(
     h2Padding: headingInset,
     h3Padding: headingInset,
     strong: TextStyle(color: colors.primary, fontWeight: FontWeight.w600),
-    blockSpacing: 16,
+    blockSpacing: 12,
     listIndent: _listMarkerWidth(
       _listMarkerSample,
       listBullet,

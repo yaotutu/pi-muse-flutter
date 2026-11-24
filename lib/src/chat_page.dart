@@ -463,7 +463,7 @@ class _ChatPageState extends State<ChatPage> {
                                             .onDrag,
                                     itemCount: messages.length,
                                     separatorBuilder: (_, _) =>
-                                        const SizedBox(height: 24),
+                                        const SizedBox(height: 12),
                                     itemBuilder: (context, index) {
                                       final position =
                                           messages.length - index - 1;
@@ -963,7 +963,7 @@ class _ChatDateLabel extends StatelessWidget {
       alwaysUse24HourFormat: true,
     );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 32),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Center(
         child: DecoratedBox(
           decoration: ShapeDecoration(
