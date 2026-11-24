@@ -56,7 +56,7 @@ class ChatMessageView extends StatelessWidget {
     );
   }
 
-  List<Widget> _actions(BuildContext context, String text, bool hasText) {
+  List<Widget> _replyActions(BuildContext context, String text, bool hasText) {
     if (!confirmed) return const [];
     final colors = Theme.of(context).colorScheme;
     final canChangeFeedback = feedbackState == null;
@@ -173,7 +173,6 @@ class ChatMessageView extends StatelessWidget {
     if (!hasContent && (!confirmed || !message.feedbackAvailable)) {
       return const SizedBox.shrink();
     }
-    final actions = _actions(context, text, hasText);
 
     final sentAt = message.sentAt?.toLocal();
     final time = sentAt == null
@@ -257,32 +256,29 @@ class ChatMessageView extends StatelessWidget {
           if (time != null || confirmed)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: _footer(
-                alignment: WrapAlignment.end,
-                metadata: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ?time,
-                    if (confirmed) ...[
-                      if (time != null) const SizedBox(width: 4),
-                      Tooltip(
-                        message: '已发送',
-                        child: Icon(
-                          Icons.done_all,
-                          size: 14,
-                          color: colors.primary,
-                        ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ?time,
+                  if (confirmed) ...[
+                    if (time != null) const SizedBox(width: 4),
+                    Tooltip(
+                      message: '已发送',
+                      child: Icon(
+                        Icons.done_all,
+                        size: 14,
+                        color: colors.primary,
                       ),
-                    ],
+                    ),
                   ],
-                ),
-                actions: actions,
+                ],
               ),
             ),
         ],
       );
     }
 
+    final actions = _replyActions(context, text, hasText);
     final body = theme.textTheme.bodyLarge!.copyWith(
       color: colors.onSurface,
       fontSize: 17,

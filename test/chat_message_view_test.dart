@@ -288,7 +288,7 @@ void main() {
     );
   });
 
-  testWidgets('six message actions fit on a phone without smaller targets', (
+  testWidgets('only assistant replies show a full row of actions', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -332,6 +332,24 @@ void main() {
           of: card,
           matching: find.byType(IconButton),
         );
+        final timestamp = find.descendant(
+          of: card,
+          matching: find.text('10:15'),
+        );
+        expect(timestamp, findsOneWidget);
+        if (role == 'user') {
+          expect(buttons, findsNothing);
+          final sent = find.descendant(
+            of: card,
+            matching: find.byTooltip('已发送'),
+          );
+          expect(sent, findsOneWidget);
+          expect(
+            tester.getRect(card).bottom - tester.getRect(timestamp).top,
+            lessThan(48),
+          );
+          continue;
+        }
         expect(buttons, findsNWidgets(6));
         final rowY = tester.getCenter(buttons.first).dy;
         for (var i = 0; i < 6; i++) {
@@ -341,11 +359,6 @@ void main() {
           expect(rect.height, greaterThanOrEqualTo(48));
           expect(tester.getRect(card).contains(rect.center), isTrue);
         }
-        final timestamp = find.descendant(
-          of: card,
-          matching: find.text('10:15'),
-        );
-        expect(timestamp, findsOneWidget);
         if (width == 412) expect(tester.getCenter(timestamp).dy, rowY);
         final quote = find.descendant(
           of: card,
@@ -360,7 +373,7 @@ void main() {
       }
       expect(tester.takeException(), isNull);
     }
-    expect(quotes, 4);
+    expect(quotes, 2);
   }, variant: const TargetPlatformVariant({TargetPlatform.android}));
 
   testWidgets(
@@ -527,19 +540,24 @@ void main() {
       find.text('a-long-attachment-file-name-for-chat.txt'),
       findsOneWidget,
     );
+    expect(
+      find.descendant(
+        of: find.byType(ChatMessageView).first,
+        matching: find.byType(IconButton),
+      ),
+      findsNothing,
+    );
     for (final icon in [Icons.thumb_up, Icons.bookmark]) {
       final buttons = find.widgetWithIcon(IconButton, icon);
-      expect(buttons, findsNWidgets(2));
-      for (final button in tester.widgetList<IconButton>(buttons)) {
-        expect(button.isSelected, true);
-        expect(button.onPressed, isNull);
-      }
+      expect(buttons, findsOneWidget);
+      final button = tester.widget<IconButton>(buttons);
+      expect(button.isSelected, true);
+      expect(button.onPressed, isNull);
     }
     final verify = find.byTooltip('核对反馈状态').hitTestable();
-    expect(verify, findsNWidgets(2));
-    await tester.tap(verify.first);
-    await tester.tap(verify.last);
-    expect(checks, 2);
+    expect(verify, findsOneWidget);
+    await tester.tap(verify);
+    expect(checks, 1);
     expect(tester.takeException(), isNull);
   });
 

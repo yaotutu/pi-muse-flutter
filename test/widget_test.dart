@@ -334,11 +334,15 @@ void main() {
     }
 
     expect(find.byTooltip('消息操作'), findsNothing);
-    expect(action('question', '点赞'), findsNothing);
-    expect(action('question', '收藏'), findsNothing);
-    await tapAction('question', '复制');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('question')),
+        matching: find.byType(IconButton),
+      ),
+      findsNothing,
+    );
     await tapAction('answer', '复制');
-    expect(clipboard, ['Original question', '**Visible reply**']);
+    expect(clipboard, ['**Visible reply**']);
     final snacks = tester.state<ScaffoldMessengerState>(
       find.byType(ScaffoldMessenger),
     );

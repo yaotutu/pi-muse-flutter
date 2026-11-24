@@ -12,9 +12,9 @@
 
 ### 操作消息
 
-聊天超出屏幕时，从消息内或消息之间上下滑动都能滚动整段聊天。滑到最早或最新一条时，列表停在边界，不会拉伸。过宽的代码块可以左右滑动。点已保存消息下方的「选择文字」，可在单独页面长按选择原文（含 Markdown 标记）；「复制」仍可直接复制整条消息。
+聊天超出屏幕时，从消息内或消息之间上下滑动都能滚动整段聊天。滑到最早或最新一条时，列表停在边界，不会拉伸。过宽的代码块可以左右滑动。
 
-已保存的消息下方提供复制和引用按钮。可反馈的消息还会显示点赞、不喜欢和书签按钮。点书签收藏，再点一次取消收藏。收藏由服务器保存，可以与点赞或不喜欢同时使用。点亮的图标表示当前状态。结果不明时，先点消息下方的「核对反馈状态」。引用会显示在输入框上方，可移除，写好追问或添加附件后随下一条消息发送。
+自己发出的消息不显示操作栏。点已保存的助手回复下方的「复制」可以复制整条回复；点「选择文字」可在单独页面长按选择原文（含 Markdown 标记）。可反馈的回复还会显示点赞、不喜欢和书签按钮。点书签收藏，再点一次取消收藏。收藏由服务器保存，可以与点赞或不喜欢同时使用。点亮的图标表示当前状态。结果不明时，先点回复下方的「核对反馈状态」。点「引用回复」后，引用会显示在输入框上方，可移除，也可随下一条消息发送。
 
 本机正在生成回复时，输入框右侧显示「停止回复」。输入下一条或添加附件后，按钮变为「停止并发送」。客户端在确认上一轮停止并同步历史后发送下一条。如果无法确认，下一条保留在输入框。若上一条也未保存，可通过「切换未发送草稿」找回两条内容。
 
@@ -97,9 +97,9 @@ Tap **执行详情** (Execution details) in the top right of chat. **动态** (A
 
 ### Message actions
 
-When the conversation extends beyond the screen, swipe vertically on a message or between messages to scroll the transcript. The transcript stops without stretching at the oldest and newest edges. Swipe horizontally to read wide code blocks. To copy part of a saved message, tap **选择文字** (Select text) below it, then touch and hold the source text on the separate page. The source includes any Markdown markup. **复制** (Copy) still copies the whole message directly.
+When the conversation extends beyond the screen, swipe vertically on a message or between messages to scroll the transcript. The transcript stops without stretching at the oldest and newest edges. Swipe horizontally to read wide code blocks.
 
-Use the buttons below a saved message to copy or quote it. Eligible messages also have Like, Dislike, and Bookmark buttons. Tap the bookmark to save it, then tap again to remove it. The server stores bookmarks independently of likes and dislikes. Highlighted icons show the current state. If the result is uncertain, first tap **核对反馈状态** (Check feedback status) below the message. The composer previews the removable quote. Add a follow-up or an attachment to send it with the next message.
+Messages you send do not have an action bar. Tap **复制** (Copy) below a saved assistant reply to copy it in full, or tap **选择文字** (Select text) to select part of its source text, including Markdown markup, on a separate page. Eligible replies also have Like, Dislike, and Bookmark buttons. Tap the bookmark to save the reply, then tap again to remove it. The server stores bookmarks independently of likes and dislikes. Highlighted icons show the current state. If the result is uncertain, first tap **核对反馈状态** (Check feedback status) below the reply. Tap **引用回复** (Quote reply) to add a removable quote above the composer and send it with your next message.
 
 During a reply started on this device, the composer shows **停止回复** (Stop reply). Enter a new message or add an attachment to switch to **停止并发送** (Stop and send). The app sends the next message after it confirms the stop and syncs history. If it cannot confirm the stop, the next message stays in the composer. If the first message was also unsaved, **切换未发送草稿** (Switch unsent drafts) lets you recover both.
 
