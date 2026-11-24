@@ -9,6 +9,16 @@ import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
 import 'package:pi_muse_flutter/src/visible_text.dart';
 
+ChatController _chatWithHistory(List<ChatMessage> history) {
+  final address = Uri.parse('http://localhost');
+  final chat = ChatController(MuseApi(address), () => MuseApi(address));
+  chat.synchronized = true;
+  chat.active.revision = 'initial';
+  chat.active.dirty = false;
+  chat.active.history = history;
+  return chat;
+}
+
 class _SessionApi extends MuseApi {
   _SessionApi() : super(Uri.parse('http://localhost'));
 
@@ -525,6 +535,141 @@ void main() {
     const code = '```text\n<think>literal\n```\n<think>hidden';
     expect(visibleAssistantText(code), '```text\n<think>literal\n```\n');
   });
+
+  testWidgets('a chat that fits does not overscroll from a message', (
+    tester,
+  ) async {
+    final chat = _chatWithHistory([
+      const ChatMessage('reply', 'assistant', 'A short reply'),
+    ]);
+    addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
+    final overscroll = <OverscrollNotification>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: NotificationListener<OverscrollNotification>(
+          onNotification: (notification) {
+            overscroll.add(notification);
+            return false;
+          },
+          child: ChatPage(
+            chat: chat,
+            appearance: appearance,
+            onConnection: () async {},
+          ),
+        ),
+      ),
+    );
+    final list = find.byType(ListView);
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    expect(position.maxScrollExtent, 0);
+    expect(
+      tester.getTopLeft(list).dy,
+      tester.getBottomLeft(find.byType(AppBar)).dy,
+    );
+    await tester.drag(find.text('A short reply'), const Offset(0, -90));
+    await tester.pumpAndSettle();
+    expect(overscroll, isEmpty);
+    expect(position.pixels, 0);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets('vertical chat drags work from text, code and message gaps', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final chat = _chatWithHistory(
+      List.generate(
+        8,
+        (index) => [
+          ChatMessage('user-$index', 'user', 'User message $index'),
+          ChatMessage(
+            'reply-$index',
+            'assistant',
+            'Assistant reply $index\n\n```text\n${'wide code ' * 16}$index\n```',
+          ),
+        ],
+      ).expand((pair) => pair).toList(),
+    );
+    addTearDown(chat.dispose);
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ChatPage(
+          chat: chat,
+          appearance: appearance,
+          onConnection: () async {},
+        ),
+      ),
+    );
+    final list = find.byType(ListView);
+    final scrollables = find.descendant(
+      of: list,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollables.first).position;
+    expect(position.pixels, 0);
+    const initialOffset = 90.0;
+    position.jumpTo(initialOffset);
+    await tester.pumpAndSettle();
+    final user = find.text('User message 7').hitTestable();
+    final reply = find.text('Assistant reply 7').hitTestable();
+    final code = find.text('${'wide code ' * 16}7');
+    final codeViewport = find.ancestor(
+      of: code,
+      matching: find.byType(SingleChildScrollView),
+    );
+    final gap = Offset(
+      tester.getCenter(list).dx,
+      (tester.getBottomLeft(find.byKey(const ValueKey('user-7'))).dy +
+              tester.getTopLeft(find.byKey(const ValueKey('reply-7'))).dy) /
+          2,
+    );
+    final starts = {
+      'message gap': gap,
+      'user text': tester.getCenter(user),
+      'assistant text': tester.getCenter(reply),
+      'code text': tester
+          .getRect(code)
+          .intersect(tester.getRect(codeViewport))
+          .center,
+    };
+    final distances = <String, double>{};
+    for (final start in starts.entries) {
+      final gesture = await tester.startGesture(start.value);
+      for (var step = 0; step < 5; step++) {
+        await gesture.moveBy(const Offset(0, -10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      distances[start.key] = initialOffset - position.pixels;
+      await gesture.up();
+      await tester.pumpAndSettle();
+      position.jumpTo(initialOffset);
+      await tester.pumpAndSettle();
+    }
+    expect(distances['message gap'], greaterThan(0), reason: '$distances');
+    expect(
+      distances.values,
+      everyElement(closeTo(distances['message gap']!, 1)),
+      reason: '$distances',
+    );
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
 
   testWidgets('the idle chat starts directly below the Material app bar', (
     tester,

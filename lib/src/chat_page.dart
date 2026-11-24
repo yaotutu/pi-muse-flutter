@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -436,7 +437,11 @@ class _ChatPageState extends State<ChatPage> {
                                   key: PageStorageKey(conversation.id),
                                   // 短对话从顶部开始，长对话仍以最新消息为滚动起点。
                                   shrinkWrap: true,
+                                  // 只有内容超出视口时才接收纵向拖动，避免短对话被拉伸。
+                                  primary: false,
                                   reverse: true,
+                                  // 从落点计算已识别的拖动，避免正文手势竞争吃掉起步距离。
+                                  dragStartBehavior: DragStartBehavior.down,
                                   padding: const EdgeInsets.fromLTRB(
                                     16,
                                     8,

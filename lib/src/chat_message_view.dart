@@ -271,6 +271,11 @@ class ChatMessageView extends StatelessWidget {
             data: hasText ? text : '无可显示的正文',
             fitContent: false,
             selectable: true,
+            // 选区工具栏使用应用已注册的 Material UI 本地化。
+            contextMenuBuilder: (_, state) =>
+                AdaptiveTextSelectionToolbar.editableText(
+                  editableTextState: state,
+                ),
             // 保留回复原文的单换行。Markdown 图片只展示替代文本。
             softLineBreak: true,
             blockSyntaxes: const [_ChatHeadingSyntax()],

@@ -102,6 +102,30 @@ void main() {
     expect(tester.widget<MarkdownBody>(markdown).data, reply);
   });
 
+  testWidgets('long pressing assistant text opens its localized toolbar', (
+    tester,
+  ) async {
+    const reply = 'Select this reply';
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('zh'),
+        supportedLocales: [Locale('zh')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: Scaffold(
+          body: ChatMessageView(
+            message: ChatMessage('reply', 'assistant', reply),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text(reply));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    expect(find.text('复制'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
   testWidgets('ordered list numbers stay on one line at large text sizes', (
     tester,
   ) async {
