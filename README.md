@@ -8,7 +8,7 @@
 
 ### 查看执行详情
 
-点聊天右上角的「执行详情」。**动态**显示当前会话的运行阶段、工具与子任务，有待审批时可跳转到对应列表。**审批**可查看待处理的文件修改和已处理的记录，历史预览会同时显示审批结果与实际写入回执。**历史**显示当前会话已登记的活动，点开可看目标、进度、结果与执行步骤。普通聊天可能没有活动记录。返回键回到聊天，草稿和正在生成的回复会保留。
+当回复涉及工具调用或子任务时，消息上方会自动出现紧凑的一行折叠过程条；点击可在聊天内原地展开/收起详细步骤（纯文本问答不显示）。点聊天右上角的「执行详情」，可切换到两个标签页：**执行记录**查看当前会话进行中与历史各轮运行的自动记录与脱敏步骤，关联待审批的步骤可直接跳到审批页；**审批**可查看待处理的文件修改（默认 24 小时审批窗口，批准后原任务原地继续）和已处理的记录，历史预览会同时显示审批结果与实际写入回执。返回键回到聊天，草稿和正在生成的回复会保留。
 
 ### 操作消息
 
@@ -93,7 +93,7 @@ Open the drawer with the top-left menu button to switch sessions or tap **新建
 
 ### View execution details
 
-Tap **执行详情** (Execution details) in the top right of chat. **动态** (Activity) shows the current conversation's run status, tools, and subtasks, with a link to any pending approvals. **审批** (Approvals) lists pending file changes and past decisions. A historical preview shows the decision and the file operation result separately. **历史** (History) lists registered activities for the current conversation. Open one to see its goal, progress, result, and execution steps. A regular chat turn may have no activity record. Use Back to return to the conversation with the draft and any in-progress reply intact.
+When a reply uses tools or subagents, a compact one-line collapsible process bar appears above that reply in chat; tap it to expand or collapse steps inline (hidden on plain-text replies). Tap **执行详情** (Execution details) in the top right of chat to open the two-tab panel: **执行记录** (Execution records) shows live and paginated historical runs with automatic sanitized steps for the current conversation, with approval steps linking directly to approval details; **审批** (Approvals) lists pending file changes (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and file operation result. Use Back to return to the conversation with the draft and any in-progress reply intact.
 
 ### Message actions
 

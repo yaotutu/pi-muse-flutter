@@ -94,6 +94,7 @@ class ChatMessage {
         attachments: attachments,
         sentAt: sentAt,
         source: source,
+        runId: runId,
         feedbackAvailable: feedbackAvailable,
         reaction: reaction,
         saved: saved,
@@ -279,6 +280,7 @@ class Conversation {
   List<ChatMessage> history = const [];
   Submission? submission;
   Json? lastRun;
+  final runsById = <String, Json>{};
   String? attachedRunId;
   ChatMessage? liveUserMessage;
   final liveReplies = <String, String>{};
@@ -336,7 +338,7 @@ class ChatController extends ChangeNotifier {
   final _runs = <(String, String), Json>{};
   final _runRevisions = <(String, String), int>{};
   final _lastRuns = <String, Json>{};
-  final _activityChanges = <String, int>{};
+  final _runHistoryChanges = <String, int>{};
   final _approvalChanges = <String, int>{};
   int _workspaceSnapshot = 0;
 
@@ -345,7 +347,7 @@ class ChatController extends ChangeNotifier {
 
   (int, int) executionHistoryVersion(String id, {required bool approvals}) => (
     _workspaceSnapshot,
-    (approvals ? _approvalChanges : _activityChanges)[id] ?? 0,
+    (approvals ? _approvalChanges : _runHistoryChanges)[id] ?? 0,
   );
 
   Json? activeRun(String id) {
@@ -354,6 +356,24 @@ class ChatController extends ChangeNotifier {
         .where((entry) => entry.key.$1 == id)
         .map((entry) => entry.value)
         .firstOrNull;
+  }
+
+  Json? runForMessage(String id, ChatMessage message) {
+    final runId = message.runId;
+    if (runId == null || runId.isEmpty) return null;
+    final active = _runs[(id, runId)];
+    if (active != null) return active;
+    final stored = conversations[id]?.runsById[runId];
+    if (stored != null) return stored;
+    final last = _lastRuns[id];
+    if (last != null && last['runId'] == runId) return last;
+    return null;
+  }
+
+  List<Json> stepsOf(Json? run) {
+    final steps = run?['steps'];
+    if (steps is! List) return const [];
+    return steps.whereType<Json>().toList(growable: false);
   }
 
   List<Json> executionRuns(String id) {
@@ -538,7 +558,7 @@ class ChatController extends ChangeNotifier {
       if (!sameInstance) {
         _cancelFollowUps();
         _lastRuns.clear();
-        _activityChanges.clear();
+        _runHistoryChanges.clear();
         _approvalChanges.clear();
       }
       _instanceId = instanceId;
@@ -582,9 +602,6 @@ class ChatController extends ChangeNotifier {
             data['revision'] as int,
             data['sessionId'] as String?,
           );
-        case 'activity_updated':
-          final id = data['sessionId'] as String;
-          _activityChanges.update(id, (value) => value + 1, ifAbsent: () => 1);
         case 'conversation_updated':
           final conversation = conversations[data['sessionId']];
           if (conversation != null) unawaited(refresh(conversation));
@@ -600,9 +617,17 @@ class ChatController extends ChangeNotifier {
     final revision = run['revision'] as int;
     if (revision <= (_runRevisions[key] ?? 0)) return;
     _runRevisions[key] = revision;
+    final conversation = conversations[key.$1];
+    final isNew =
+        conversation != null && !conversation.runsById.containsKey(key.$2);
+    conversation?.runsById[key.$2] = run;
     if (run['status'] == 'running') {
       _runs[key] = run;
+      if (isNew) {
+        _runHistoryChanges.update(key.$1, (value) => value + 1, ifAbsent: () => 1);
+      }
     } else if (_isTerminalStatus(run['status'])) {
+      _runHistoryChanges.update(key.$1, (value) => value + 1, ifAbsent: () => 1);
       final wasRunning = _runs.remove(key) != null;
       final last = _lastRuns[key.$1];
       final endedAt = run['endedAt'] as String?;
@@ -875,7 +900,7 @@ class ChatController extends ChangeNotifier {
     }
     _runs.removeWhere((key, _) => key.$1 == id);
     _lastRuns.remove(id);
-    _activityChanges.remove(id);
+    _runHistoryChanges.remove(id);
     _approvalChanges.remove(id);
     approvals.removeWhere((_, approval) => approval.sessionId == id);
     if (activeId == id) select(mainSession);
@@ -968,6 +993,8 @@ class ChatController extends ChangeNotifier {
           conversation._clearDraft();
           conversation._recoveredDrafts.clear();
           conversation._feedbackRequests.clear();
+          conversation.runsById.clear();
+          _runHistoryChanges.remove(conversation.id);
           conversation.attachmentError = null;
           conversation.error = null;
         }
@@ -977,6 +1004,10 @@ class ChatController extends ChangeNotifier {
         final lastRun = data['lastRun'];
         if (lastRun is Json) {
           conversation.lastRun = lastRun;
+          final runId = lastRun['runId'];
+          if (runId is String && runId.isNotEmpty) {
+            conversation.runsById[runId] = lastRun;
+          }
         } else if (data.containsKey('lastRun') && lastRun == null) {
           conversation.lastRun = null;
         }
@@ -993,6 +1024,9 @@ class ChatController extends ChangeNotifier {
           conversation.stoppingActiveRun = false;
         }
         conversation.historyError = null;
+        if (synchronized && binding != null) {
+          unawaited(_refreshRuns(conversation, expectedBinding: binding));
+        }
       } while (conversation.dirty && conversation.submission?.running != true);
     } catch (error) {
       _checkAuth(error);
@@ -1000,6 +1034,36 @@ class ChatController extends ChangeNotifier {
     } finally {
       conversation.read = null;
       _changed();
+    }
+  }
+
+  Future<void> _refreshRuns(
+    Conversation conversation, {
+    required String expectedBinding,
+  }) async {
+    try {
+      final data = await api.get(
+        '/api/runs',
+        query: {'sessionId': conversation.id, 'limit': '50'},
+      );
+      if (!_owns(conversation) || conversation.binding != expectedBinding) {
+        return;
+      }
+      final runs = data['runs'];
+      if (runs is! List) return;
+      for (final item in runs) {
+        if (item is! Json) continue;
+        final runId = item['runId'];
+        if (runId is! String || runId.isEmpty) continue;
+        final existing = conversation.runsById[runId];
+        if (existing == null ||
+            (existing['status'] == 'running' && item['status'] != 'running')) {
+          conversation.runsById[runId] = item;
+        }
+      }
+      _changed();
+    } catch (_) {
+      // 执行记录用于辅助过程展示；失败不覆盖权威历史同步状态。
     }
   }
 

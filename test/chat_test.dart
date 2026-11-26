@@ -59,10 +59,21 @@ class _Transport implements MuseApi {
       if (readRunStatus == null) throw const ApiException(404);
       return await readRunStatus!(query!);
     }
+    if (path == '/api/runs') {
+      final sessionId = query?['sessionId'] ?? mainSession;
+      return {
+        'instanceId': 'test-instance',
+        'runs': runs[sessionId] ?? <Json>[],
+        'hasMore': false,
+        'nextCursor': null,
+      };
+    }
     if (path.endsWith('/feedback')) return await feedbackRead!(path, query);
     final id = query!['sessionId']!;
     return readHistory == null ? historyData(id) : await readHistory!(id);
   }
+
+  final runs = <String, List<Json>>{};
 
   Json historyData(String id) => {
     'sessionId': id,
@@ -1069,4 +1080,57 @@ void main() {
     expect(image.size, 8192);
     expect(image.imageBytes, webp);
   });
+
+  test(
+    'ChatController hydrates runsById from /api/runs and preserves runId across feedback updates',
+    () async {
+      final api = _Transport()
+        ..history[mainSession] = [
+          {
+            'id': 'a1',
+            'role': 'assistant',
+            'content': '已查好',
+            'metadata': {'runId': 'run-123', 'feedbackAvailable': true},
+            'feedback': {'reaction': null, 'saved': false, 'comments': []},
+          },
+        ]
+        ..runs[mainSession] = [
+          {
+            'sessionId': mainSession,
+            'runId': 'run-123',
+            'revision': 2,
+            'status': 'succeeded',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '查询当前时间',
+                'detail': null,
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'currentTime',
+                'approvalId': null,
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:01.000Z',
+              },
+            ],
+          },
+        ];
+      final chat = ChatController(api, () => api)..synchronized = true;
+      addTearDown(chat.dispose);
+      await chat.refresh(chat.active);
+      await _tick();
+
+      final msg = chat.active.history.single;
+      expect(msg.runId, 'run-123');
+      expect(chat.stepsOf(chat.runForMessage(mainSession, msg)).single['title'], '查询当前时间');
+
+      await chat.changeReaction(chat.active, chat.active.binding!, 'a1', MessageReaction.like);
+      final updated = chat.active.history.single;
+      expect(updated.reaction, MessageReaction.like);
+      expect(updated.runId, 'run-123');
+      expect(chat.stepsOf(chat.runForMessage(mainSession, updated)).length, 1);
+    },
+  );
 }

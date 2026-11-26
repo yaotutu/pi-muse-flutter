@@ -116,7 +116,7 @@ class _MessageApi extends _SessionApi {
 }
 
 class _ExecutionApi extends _SessionApi {
-  final activityCursors = <String?>[];
+  final runCursors = <String?>[];
   final frames = StreamController<SseFrame>();
   int subscriptions = 0;
 
@@ -129,33 +129,69 @@ class _ExecutionApi extends _SessionApi {
   @override
   Future<Json> get(String path, {Map<String, String>? query}) async {
     switch (path) {
-      case '/api/activities':
+      case '/api/runs':
         expect(query?['sessionId'], mainSession);
         final cursor = query?['cursor'];
-        activityCursors.add(cursor);
+        runCursors.add(cursor);
         return {
-          'activities': [
-            {
-              'sessionId': mainSession,
-              'id': cursor == null ? 'first' : 'second',
-              'title': cursor == null ? '第一项活动' : '第二项活动',
-              'status': 'completed',
-            },
+          'runs': [
+            if (cursor == null)
+              {
+                'sessionId': mainSession,
+                'runId': 'first-run',
+                'revision': 2,
+                'source': 'chat',
+                'status': 'succeeded',
+                'title': '第一轮调研',
+                'label': '已完成',
+                'startedAt': '2026-01-02T00:00:00.000Z',
+                'endedAt': '2026-01-02T00:00:05.000Z',
+                'steps': [
+                  {
+                    'id': 'step-search',
+                    'parentId': null,
+                    'kind': 'tool',
+                    'title': '搜索网页',
+                    'detail': 'pi muse',
+                    'status': 'succeeded',
+                    'result': '已完成',
+                    'toolName': 'search_web',
+                    'approvalId': null,
+                    'startedAt': '2026-01-02T00:00:00.000Z',
+                    'endedAt': '2026-01-02T00:00:02.000Z',
+                  },
+                ],
+              }
+            else
+              {
+                'sessionId': mainSession,
+                'runId': 'second-run',
+                'revision': 2,
+                'source': 'chat',
+                'status': 'succeeded',
+                'title': '第二轮读取',
+                'label': '已完成',
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:03.000Z',
+                'steps': [
+                  {
+                    'id': 'step',
+                    'parentId': null,
+                    'kind': 'tool',
+                    'title': '读取测试文件',
+                    'detail': 'test.txt',
+                    'status': 'succeeded',
+                    'result': '已完成',
+                    'toolName': 'read',
+                    'approvalId': null,
+                    'startedAt': '2026-01-01T00:00:00.000Z',
+                    'endedAt': '2026-01-01T00:00:02.000Z',
+                  },
+                ],
+              },
           ],
+          'hasMore': cursor == null,
           'nextCursor': cursor == null ? 'opaque-cursor' : null,
-        };
-      case '/api/activities/second':
-        return {
-          'activity': {
-            'id': 'second',
-            'sessionId': mainSession,
-            'title': '第二项活动',
-            'status': 'completed',
-            'goal': '核对执行步骤',
-          },
-          'steps': [
-            {'id': 'step', 'title': '读取测试文件', 'status': 'succeeded'},
-          ],
         };
       case '/api/approvals':
         expect(query?['sessionId'], mainSession);
@@ -194,7 +230,7 @@ class _ExecutionApi extends _SessionApi {
 
 void main() {
   testWidgets(
-    'execution details open directly and scope activities and approvals to chat',
+    'execution details open directly and scope execution records and approvals to chat',
     (tester) async {
       final api = _ExecutionApi();
       final chat = ChatController(api, () => api);
@@ -246,19 +282,19 @@ void main() {
       await tester.enterText(find.byType(TextField), '保留草稿');
       await tester.tap(find.byTooltip('执行详情'));
       await tester.pumpAndSettle();
+      expect(find.text('执行记录'), findsOneWidget);
+      expect(find.text('审批'), findsOneWidget);
+      expect(find.text('动态'), findsNothing);
+      expect(find.text('历史'), findsNothing);
       expect(find.text('读取资料'), findsOneWidget);
+      expect(find.text('第一轮调研'), findsOneWidget);
       expect(find.text('其他会话运行'), findsNothing);
-      await tester.tap(find.text('历史'));
-      await tester.pumpAndSettle();
-      expect(find.text('第一项活动'), findsOneWidget);
       await tester.tap(find.text('加载更多'));
       await tester.pumpAndSettle();
-      expect(api.activityCursors, [null, 'opaque-cursor']);
-      await tester.tap(find.text('第二项活动'));
+      expect(api.runCursors.take(2).toList(), [null, 'opaque-cursor']);
+      await tester.tap(find.text('第二轮读取'));
       await tester.pumpAndSettle();
-      expect(find.text('读取测试文件'), findsOneWidget);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
+      expect(find.text('读取测试文件 · test.txt'), findsOneWidget);
       await tester.tap(find.text('审批'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看审批历史'));
@@ -276,6 +312,123 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('保留草稿'), findsOneWidget);
       expect(api.subscriptions, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'inline process bar is hidden for 0-step replies and toggles steps inline for tool-using replies',
+    (tester) async {
+      final api = _ExecutionApi();
+      final chat = ChatController(api, () => api);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(
+            chat: chat,
+            appearance: appearance,
+            onConnection: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      chat.active.history = const [
+        ChatMessage('u1', 'user', '1+1等于几'),
+        ChatMessage('a1', 'assistant', '等于 2。', runId: 'plain-run'),
+        ChatMessage('u2', 'user', '搜索并改写文档'),
+        ChatMessage('a2', 'assistant', '已完成并请求确认。', runId: 'tool-run'),
+      ];
+      api.frames.add(
+        const SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': 'plain-run',
+            'revision': 2,
+            'status': 'succeeded',
+            'steps': [],
+          },
+        ),
+      );
+      api.frames.add(
+        const SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': 'tool-run',
+            'revision': 3,
+            'status': 'succeeded',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': 'pi muse docs',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:01.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'approval',
+                'title': '请求修改文件',
+                'detail': 'notes/plan.md',
+                'status': 'succeeded',
+                'result': '已批准',
+                'toolName': null,
+                'approvalId': 'past',
+                'startedAt': '2026-01-01T00:00:01.000Z',
+                'endedAt': '2026-01-01T00:00:02.000Z',
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Plain reply has no bar; tool reply shows collapsed 1-line bar.
+      expect(find.text('已执行 2 步'), findsOneWidget);
+      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
+
+      await tester.tap(find.text('已执行 2 步'));
+      await tester.pumpAndSettle();
+      expect(find.text('搜索网页 · pi muse docs'), findsOneWidget);
+      expect(find.text('请求修改文件 · notes/plan.md'), findsOneWidget);
+
+      await tester.tap(find.text('请求修改文件 · notes/plan.md'));
+      await tester.pumpAndSettle();
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('新文'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('已执行 2 步'));
+      await tester.pumpAndSettle();
+      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
