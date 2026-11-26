@@ -292,7 +292,7 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
         byId[runId] = run;
       }
     }
-    final items = byId.values.toList();
+    final items = byId.values.where(_isMeaningfulRun).toList();
     items.sort((a, b) {
       final aRunning = a['status'] == 'running' ? 0 : 1;
       final bRunning = b['status'] == 'running' ? 0 : 1;
@@ -302,6 +302,18 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
       return bTime.compareTo(aTime);
     });
     return items;
+  }
+
+  bool _isMeaningfulRun(Json run) {
+    final steps = widget.chat.stepsOf(run);
+    final tools = (run['tools'] as List? ?? const []);
+    final subagents = (run['subagents'] as List? ?? const []);
+    final noActions = steps.isEmpty && tools.isEmpty && subagents.isEmpty;
+    if (run['title'] == '正在处理请求' && noActions) return false;
+    final status = run['status'] as String?;
+    if (status == 'running' || run['source'] == 'job') return true;
+    if (!noActions) return true;
+    return status == 'failed' || status == 'cancelled';
   }
 
   @override
@@ -335,7 +347,31 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                   child: const Text('读取失败，点此重试'),
                 )
               else if (_loaded && runs.isEmpty && !_loading)
-                const ListTile(title: Text('暂无执行记录')),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 12),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.checklist_rtl_outlined,
+                        size: 36,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '暂无执行记录',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '仅记录调用工具、子代理、审批、定时任务或异常中断的操作；普通纯文字问答不记入此处。',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               for (final run in runs) _buildRunCard(context, run),
               if (_failed && runs.isNotEmpty)
                 TextButton(
@@ -365,16 +401,40 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
     final subagents = (run['subagents'] as List? ?? const []).cast<Json>();
     final hasDetails =
         steps.isNotEmpty || tools.isNotEmpty || subagents.isNotEmpty;
-    final isRunning = run['status'] == 'running';
+    final status = run['status'] as String?;
+    final isRunning = status == 'running';
     final expanded = isRunning || _expanded.contains(runId);
-    final title =
-        _displayText(run['title']) ??
-        (run['source'] == 'job' ? '定时任务' : '聊天执行');
-    final statusLabel =
-        _displayText(run['label']) ?? executionStatus(run['status']);
-    final summary = steps.isNotEmpty
-        ? '$statusLabel · ${steps.length} 步'
-        : statusLabel;
+    final rawTitle = _displayText(run['title']);
+    final title = (rawTitle != null && rawTitle != '正在处理请求')
+        ? rawTitle
+        : (run['source'] == 'job' ? '定时任务' : '聊天执行');
+    final stepSummary = _summarizeRunSteps(steps);
+    final rawLabel = _displayText(run['label']);
+    final isGenericLabel =
+        rawLabel == '执行完成' || rawLabel == '执行已停止' || rawLabel == '执行失败';
+    final subagentSummary = subagents.isNotEmpty
+        ? '委派子任务：${subagents.map((a) => _displayText(a['role']) ?? '子任务').join('、')}'
+        : null;
+    final actionText = isRunning
+        ? ([
+            rawLabel ?? '进行中',
+            ?stepSummary,
+          ].join(' · '))
+        : (stepSummary ??
+            (!isGenericLabel ? rawLabel : null) ??
+            subagentSummary ??
+            rawLabel ??
+            executionStatus(status));
+    final timeText = _formatRunTime(run['startedAt']);
+    final (badgeBg, badgeFg) = switch (status) {
+      'running' => (colors.primaryContainer, colors.onPrimaryContainer),
+      'succeeded' || 'completed' => (
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
+      'failed' => (colors.errorContainer, colors.onErrorContainer),
+      _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
+    };
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -396,10 +456,17 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title, style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 2),
                         Text(
-                          summary,
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          actionText,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -407,11 +474,50 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                       ],
                     ),
                   ),
-                  if (hasDetails && !isRunning)
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      color: colors.onSurfaceVariant,
-                    ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          executionStatus(status),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: badgeFg,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (timeText != null || (hasDetails && !isRunning)) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (timeText != null)
+                              Text(
+                                timeText,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            if (hasDetails && !isRunning)
+                              Icon(
+                                expanded ? Icons.expand_less : Icons.expand_more,
+                                size: 18,
+                                color: colors.onSurfaceVariant,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -699,6 +805,66 @@ class RunStepsList extends StatelessWidget {
 
 String? _displayText(Object? value) =>
     value is String && value.isNotEmpty ? value : null;
+
+String? _summarizeRunSteps(List<Json> steps) {
+  if (steps.isEmpty) return null;
+  final kept = <(String? kind, String? toolName, String title, String? detail, String? suffix)>[];
+  for (final step in steps) {
+    final kind = step['kind'] as String?;
+    final toolName = step['toolName'] as String?;
+    final title = (_displayText(step['title']) ?? '执行步骤').trim();
+    final detail = _displayText(step['detail'])?.trim();
+    final status = step['status'] as String?;
+    if (kind == 'file_commit' && kept.isNotEmpty) {
+      final prev = kept.last;
+      final matchesPrevFileTool =
+          prev.$1 == 'tool' &&
+          (prev.$2 == 'write' ||
+              prev.$2 == 'edit' ||
+              prev.$3 == '写入文件' ||
+              prev.$3 == '编辑文件') &&
+          prev.$4 == detail;
+      if (matchesPrevFileTool) {
+        if (status == 'denied') {
+          kept[kept.length - 1] = (prev.$1, prev.$2, prev.$3, prev.$4, '已拒绝');
+        } else if (status == 'failed') {
+          kept[kept.length - 1] = (prev.$1, prev.$2, prev.$3, prev.$4, '写入失败');
+        }
+        continue;
+      }
+    }
+    final suffix = switch (status) {
+      'denied' => '已拒绝',
+      'expired' => '已过期',
+      'failed' => '失败',
+      'cancelled' => '已取消',
+      _ => null,
+    };
+    kept.add((kind, toolName, title, detail, suffix));
+  }
+  if (kept.isEmpty) return null;
+  final labels = kept.take(3).map((entry) {
+    final base = entry.$4 != null ? '${entry.$3}（${entry.$4}）' : entry.$3;
+    return entry.$5 != null ? '$base·${entry.$5}' : base;
+  }).toList();
+  final joined = labels.join(' → ');
+  return kept.length > 3 ? '$joined · 共 ${kept.length} 步' : joined;
+}
+
+String? _formatRunTime(Object? raw) {
+  if (raw is! String || raw.isEmpty) return null;
+  final parsed = DateTime.tryParse(raw)?.toLocal();
+  if (parsed == null) return null;
+  final now = DateTime.now();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final hm = '${two(parsed.hour)}:${two(parsed.minute)}';
+  if (parsed.year == now.year &&
+      parsed.month == now.month &&
+      parsed.day == now.day) {
+    return hm;
+  }
+  return '${two(parsed.month)}-${two(parsed.day)} $hm';
+}
 
 String executionStatus(Object? status) => switch (status) {
   'queued' => '排队中',

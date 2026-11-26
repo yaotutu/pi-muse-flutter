@@ -7,6 +7,7 @@ import 'package:pi_muse_flutter/src/api.dart';
 import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
+import 'package:pi_muse_flutter/src/execution_details_page.dart';
 import 'package:pi_muse_flutter/src/visible_text.dart';
 
 ChatController _chatWithHistory(List<ChatMessage> history) {
@@ -1537,6 +1538,159 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets(
+    'ExecutionDetailsPage hides plain-chat no-op runs, shows empty hint, and surfaces concrete step summary on cards',
+    (tester) async {
+      final api = _CustomRunsApi(
+        runs: [
+          {
+            'sessionId': mainSession,
+            'runId': 'plain-finished',
+            'revision': 2,
+            'source': 'chat',
+            'status': 'succeeded',
+            'title': '1+1等于几',
+            'label': '执行完成',
+            'startedAt': '2026-11-26T08:00:00.000Z',
+            'endedAt': '2026-11-26T08:00:02.000Z',
+            'steps': <Json>[],
+          },
+          {
+            'sessionId': mainSession,
+            'runId': 'legacy-placeholder',
+            'revision': 2,
+            'source': 'chat',
+            'status': 'cancelled',
+            'title': '正在处理请求',
+            'label': '执行已停止',
+            'startedAt': '2026-11-25T08:00:00.000Z',
+            'endedAt': '2026-11-25T08:00:05.000Z',
+            'steps': <Json>[],
+          },
+          {
+            'sessionId': mainSession,
+            'runId': 'real-tool-run',
+            'revision': 3,
+            'source': 'chat',
+            'status': 'succeeded',
+            'title': '查一下北京天气并记草稿',
+            'label': '搜索网页（北京天气） → 写入文件（shared/weather.md）·已拒绝',
+            'startedAt': '2026-11-26T09:05:00.000Z',
+            'endedAt': '2026-11-26T09:05:10.000Z',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': '北京天气',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:00.000Z',
+                'endedAt': '2026-11-26T09:05:03.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '写入文件',
+                'detail': 'shared/weather.md',
+                'status': 'denied',
+                'result': '操作被拒绝',
+                'toolName': 'write',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:03.000Z',
+                'endedAt': '2026-11-26T09:05:10.000Z',
+              },
+              {
+                'id': 's3',
+                'parentId': 's2',
+                'kind': 'file_commit',
+                'title': '文件提交',
+                'detail': 'shared/weather.md',
+                'status': 'denied',
+                'result': '未批准，未写入文件',
+                'toolName': null,
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:10.000Z',
+                'endedAt': '2026-11-26T09:05:10.000Z',
+              },
+            ],
+          },
+        ],
+      );
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExecutionDetailsPage(
+            chat: chat,
+            sessionId: mainSession,
+            title: '默认会话',
+            openApproval: (_, _, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1+1等于几'), findsNothing);
+      expect(find.text('正在处理请求'), findsNothing);
+      expect(find.text('查一下北京天气并记草稿'), findsOneWidget);
+      expect(
+        find.text('搜索网页（北京天气） → 写入文件（shared/weather.md）·已拒绝'),
+        findsOneWidget,
+      );
+
+      // Empty runs show helpful explanation instead of a blank tile.
+      api.runs = <Json>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExecutionDetailsPage(
+            key: const ValueKey('empty-page'),
+            chat: chat,
+            sessionId: 'empty-session',
+            title: '空白会话',
+            openApproval: (_, _, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('暂无执行记录'), findsOneWidget);
+      expect(find.textContaining('普通纯文字问答不记入此处'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+}
+
+class _CustomRunsApi extends _ExecutionApi {
+  _CustomRunsApi({required this.runs});
+  List<Json> runs;
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/runs') {
+      return {
+        'instanceId': 'test-instance',
+        'runs': runs,
+        'hasMore': false,
+        'nextCursor': null,
+      };
+    }
+    return super.get(path, query: query);
+  }
 }
 
 class _InlineApprovalApi extends _ExecutionApi {
