@@ -191,6 +191,12 @@ class MuseApi {
   Stream<SseFrame> run(Json body) =>
       _stream('POST', '/api/conversation/run', body: body);
 
+  Stream<SseFrame> streamRun(String sessionId, String runId) => _stream(
+    'GET',
+    '/api/conversation/stream',
+    query: {'sessionId': sessionId, 'runId': runId},
+  );
+
   void close() => _client.close(force: true);
 
   Future<Json> _request(
@@ -218,11 +224,18 @@ class MuseApi {
   Stream<SseFrame> _stream(
     String method,
     String path, {
+    Map<String, String>? query,
     Json? body,
     bool workspace = false,
   }) async* {
     try {
-      final response = await _open(method, path, body: body, sse: true);
+      final response = await _open(
+        method,
+        path,
+        query: query,
+        body: body,
+        sse: true,
+      );
       await _checkStatus(response, body);
       if (response.headers.contentType?.mimeType != 'text/event-stream') {
         await response.listen(null).cancel();

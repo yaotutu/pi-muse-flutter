@@ -1128,4 +1128,93 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets(
+    'shows processing card and stop button for restored run, and terminal notice on failure',
+    (tester) async {
+      final api = _RestoredRunApi();
+      final chat = ChatController(api, () => api);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': 'restored-run',
+                'revision': 1,
+                'status': 'running',
+                'label': '正在调用模型',
+                'tools': [
+                  {'label': '读取笔记', 'status': 'running'},
+                ],
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('正在调用模型'), findsOneWidget);
+      expect(find.text('工具 1 项进行中'), findsOneWidget);
+      expect(find.byTooltip('停止回复'), findsOneWidget);
+
+      // 模拟远端运行失败结束并写入 lastRun
+      api.lastRun = {
+        'sessionId': mainSession,
+        'runId': 'restored-run',
+        'revision': 2,
+        'status': 'failed',
+        'endedAt': '2026-11-26T00:00:00Z',
+      };
+      api.frames.add(
+        SseFrame(
+          event: 'session_status_updated',
+          data: {'instanceId': 'test-instance', ...api.lastRun!},
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.text('上一轮回复未能完成，你可以重新发送或继续对话'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('发送'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+}
+
+class _RestoredRunApi extends _ExecutionApi {
+  Json? lastRun;
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/conversation') {
+      return {
+        'sessionId': query?['sessionId'],
+        'piSessionId': 'binding',
+        'revision': 'rev1',
+        'messages': [
+          {'id': 'u1', 'role': 'user', 'content': '帮我查一下'},
+        ],
+        'lastRun': lastRun,
+      };
+    }
+    return super.get(path, query: query);
+  }
 }

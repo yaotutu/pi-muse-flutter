@@ -19,6 +19,9 @@ class _Transport implements MuseApi {
   final feedbackWrites = <(String, Json)>[];
   Future<Json> Function(String id)? readHistory;
   Future<Json> Function(Map<String, String> query)? readRunStatus;
+  final reattachStreams = <String, Stream<SseFrame>>{};
+  final reattachCalls = <(String, String)>[];
+  int eventsCalls = 0;
   Future<Json> Function()? stopResult;
   Future<Json> Function()? feedbackWrite;
   Future<Json> Function(String path, Map<String, String>? query)? feedbackRead;
@@ -29,12 +32,21 @@ class _Transport implements MuseApi {
   Future<Json> Function(String id, Json body)? remove;
 
   @override
-  Stream<SseFrame> events() => stream.stream;
+  Stream<SseFrame> events() {
+    eventsCalls++;
+    return stream.stream;
+  }
 
   @override
   Stream<SseFrame> run(Json body) {
     submitted.add(body);
     return runStreams[submitted.length - 1].stream;
+  }
+
+  @override
+  Stream<SseFrame> streamRun(String sessionId, String runId) {
+    reattachCalls.add((sessionId, runId));
+    return reattachStreams[runId] ?? const Stream.empty();
   }
 
   @override
@@ -712,9 +724,11 @@ void main() {
   );
 
   test(
-    'a disconnected submission is checked read-only and never replays',
+    'a disconnected submission auto-reconciles read-only and never replays',
     () async {
       final api = _Transport();
+      final statusCheck = Completer<Json>();
+      api.readRunStatus = (_) => statusCheck.future;
       final chat = ChatController(
         api,
         () => api,
@@ -740,13 +754,237 @@ void main() {
       await sending;
       await _tick();
       expect(chat.active.submission?.settled, false);
+      expect(chat.active.submission?.reconciling, true);
       expect(chat.canSend, false);
       expect(chat.active.draftAttachments, isEmpty);
+      // 离线核对失败后停留在待同步，手动核对确认 404 后无损恢复草稿与附件。
+      statusCheck.completeError(const ApiException(0));
+      await _tick();
+      expect(chat.active.submission?.reconciling, false);
+      api.readRunStatus = null;
       await chat.verifySubmission();
       expect(chat.active.submission, isNull);
       expect(chat.active.draftAttachments.single, same(original));
       expect(chat.canSend, true);
       expect(api.submitted, hasLength(1));
+    },
+  );
+
+  test(
+    'disconnecting while server keeps running auto-reattaches stream without duplicating text',
+    () async {
+      final api = _Transport();
+      final events = _Transport();
+      final events2 = _Transport();
+      final reattach = StreamController<SseFrame>();
+      final transports = [events, events2, events2].iterator;
+      final chat = ChatController(api, () {
+        transports.moveNext();
+        return transports.current;
+      })..start();
+      addTearDown(chat.dispose);
+      events.stream.add(_ready);
+      await _tick();
+
+      chat.setDraft('Long task');
+      final sending = chat.send();
+      final submitted = api.submitted.single;
+      final runId = submitted['runId'] as String;
+      final msgId = (submitted['message'] as Json)['id'] as String;
+      events2.reattachStreams[runId] = reattach.stream;
+
+      api.runStream.add(
+        const SseFrame(
+          data: {
+            'type': 'TEXT_MESSAGE_CONTENT',
+            'messageId': 'assistant-1',
+            'delta': 'Hello',
+          },
+        ),
+      );
+      await _tick();
+      // 模拟手机切后台断流，同时 /api/events 断开
+      await events.stream.close();
+      await _tick();
+      await api.runStream.close();
+      await sending;
+      expect(chat.active.submission?.reconciling, true);
+      expect(chat.active.error, isNull);
+
+      // 回前台重连拿到 ready：服务端仍报告该 run 在运行
+      chat.onAppResumed(const Duration(seconds: 10));
+      api.history[mainSession] = [
+        {'id': msgId, 'role': 'user', 'content': 'Long task'},
+      ];
+      events2.stream.add(
+        SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': runId,
+                'revision': 2,
+                'source': 'chat',
+                'status': 'running',
+                'label': '正在思考',
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await _tick();
+      expect(chat.active.submission, isNull);
+      expect(events2.reattachCalls, [(mainSession, runId)]);
+
+      // 重挂流首帧先补发已缓冲全量快照，后续再增量，不能重复拼接
+      reattach.add(
+        const SseFrame(
+          data: {
+            'type': 'TEXT_MESSAGE_CONTENT',
+            'messageId': 'assistant-1',
+            'delta': 'Hello world',
+          },
+        ),
+      );
+      reattach.add(
+        const SseFrame(
+          data: {
+            'type': 'TEXT_MESSAGE_CONTENT',
+            'messageId': 'assistant-1',
+            'delta': '!',
+          },
+        ),
+      );
+      await _tick();
+      expect(
+        chat.active.messages.map((m) => m.text).toList(),
+        ['Long task', 'Hello world!'],
+      );
+
+      api.history[mainSession] = [
+        {'id': msgId, 'role': 'user', 'content': 'Long task'},
+        {'id': 'assistant-1', 'role': 'assistant', 'content': 'Hello world!'},
+      ];
+      events2.stream.add(
+        SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': runId,
+            'revision': 3,
+            'source': 'chat',
+            'status': 'succeeded',
+            'endedAt': '2026-11-26T00:00:00Z',
+          },
+        ),
+      );
+      reattach.add(
+        SseFrame(
+          data: {'type': 'RUN_FINISHED', 'sessionId': mainSession, 'runId': runId},
+        ),
+      );
+      await reattach.close();
+      await _tick();
+      expect(chat.active.error, isNull);
+      expect(
+        chat.active.messages.map((m) => m.text).toList(),
+        ['Long task', 'Hello world!'],
+      );
+      await events2.stream.close();
+    },
+  );
+
+  test(
+    'disconnecting when server already finished reconciles cleanly without errors',
+    () async {
+      final api = _Transport();
+      final chat = ChatController(api, () => api)..synchronized = true;
+      addTearDown(chat.dispose);
+      await chat.refresh(chat.active);
+      chat.setDraft('Quick task');
+      final sending = chat.send();
+      final submitted = api.submitted.single;
+      final runId = submitted['runId'] as String;
+      final msgId = (submitted['message'] as Json)['id'] as String;
+      api.readRunStatus = (query) async => {
+        'instanceId': 'test-instance',
+        'status': {
+          'sessionId': mainSession,
+          'runId': runId,
+          'revision': 2,
+          'source': 'chat',
+          'status': 'succeeded',
+          'endedAt': '2026-11-26T00:00:00Z',
+        },
+      };
+      api.history[mainSession] = [
+        {'id': msgId, 'role': 'user', 'content': 'Quick task'},
+        {'id': 'a1', 'role': 'assistant', 'content': 'Done in background'},
+      ];
+      await api.runStream.close();
+      await sending;
+      await _tick();
+      expect(chat.active.submission, isNull);
+      expect(chat.active.error, isNull);
+      expect(
+        chat.active.messages.map((m) => m.text).toList(),
+        ['Quick task', 'Done in background'],
+      );
+    },
+  );
+
+  test(
+    'cold start attaches to active server run and can stop it, and brief resume keeps stream',
+    () async {
+      final api = _Transport();
+      final events = _Transport();
+      final reattach = StreamController<SseFrame>();
+      events.reattachStreams['remote-run'] = reattach.stream;
+      final chat = ChatController(api, () => events)..start();
+      addTearDown(chat.dispose);
+
+      events.stream.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': 'remote-run',
+                'revision': 1,
+                'source': 'chat',
+                'status': 'running',
+                'label': '正在调用工具',
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await _tick();
+      expect(events.eventsCalls, 1);
+      expect(events.reattachCalls, [(mainSession, 'remote-run')]);
+      expect(chat.canStop(sendNext: false), isTrue);
+
+      // 短暂切回前台且长连接仍健康：不重连 /api/events
+      chat.onAppResumed(const Duration(seconds: 2));
+      await _tick();
+      expect(events.eventsCalls, 1);
+
+      await chat.stop();
+      expect(api.stops.single, {'sessionId': mainSession, 'runId': 'remote-run'});
+
+      // 切后台超过阈值时重连
+      chat.onAppResumed(const Duration(seconds: 8));
+      expect(events.eventsCalls, 2);
+
+      await reattach.close();
+      await events.stream.close();
     },
   );
 

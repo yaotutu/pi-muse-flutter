@@ -39,6 +39,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   final _navigator = GlobalKey<NavigatorState>();
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   (String, AppUpdateStatus)? _updateNotice;
+  DateTime? _backgroundedAt;
 
   @override
   void initState() {
@@ -137,8 +138,16 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _updates.setForeground(state == AppLifecycleState.resumed);
-    if (state == AppLifecycleState.resumed) {
-      _chat?.reconnect();
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _backgroundedAt ??= DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      final backgroundDuration = _backgroundedAt == null
+          ? null
+          : DateTime.now().difference(_backgroundedAt!);
+      _backgroundedAt = null;
+      _chat?.onAppResumed(backgroundDuration);
       if (!_loading) unawaited(SmsSync.resume());
     }
   }

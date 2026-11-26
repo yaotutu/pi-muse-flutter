@@ -214,6 +214,7 @@ class Submission {
   bool running = true;
   bool stopping = false;
   bool settled = false;
+  bool reconciling = false;
   bool verifying = false;
 
   Iterable<ChatMessage> get overlay sync* {
@@ -274,6 +275,12 @@ class Conversation {
   String? binding;
   List<ChatMessage> history = const [];
   Submission? submission;
+  Json? lastRun;
+  String? attachedRunId;
+  ChatMessage? liveUserMessage;
+  final liveReplies = <String, String>{};
+  MuseApi? _attachedStreamApi;
+  bool stoppingActiveRun = false;
   String? error;
   String? historyError;
   bool missing = false;
@@ -283,7 +290,23 @@ class Conversation {
   Iterable<ChatMessage> get messages sync* {
     yield* history;
     final pending = submission;
-    if (pending != null) yield* pending.overlay;
+    if (pending != null) {
+      yield* pending.overlay;
+      return;
+    }
+    final liveUser = liveUserMessage;
+    if (liveUser != null &&
+        !history.any((message) => message.id == liveUser.id)) {
+      yield liveUser;
+    }
+    if (liveReplies.isNotEmpty) {
+      final savedIds = history.map((message) => message.id).toSet();
+      for (final reply in liveReplies.entries) {
+        if (!savedIds.contains(reply.key)) {
+          yield ChatMessage(reply.key, 'assistant', reply.value);
+        }
+      }
+    }
   }
 }
 
@@ -321,6 +344,14 @@ class ChatController extends ChangeNotifier {
     _workspaceSnapshot,
     (approvals ? _approvalChanges : _activityChanges)[id] ?? 0,
   );
+
+  Json? activeRun(String id) {
+    if (!synchronized) return null;
+    return _runs.entries
+        .where((entry) => entry.key.$1 == id)
+        .map((entry) => entry.value)
+        .firstOrNull;
+  }
 
   List<Json> executionRuns(String id) {
     if (!synchronized) return const [];
@@ -379,15 +410,19 @@ class ChatController extends ChangeNotifier {
   bool canStop({required bool sendNext}) {
     final conversation = active;
     final pending = conversation.submission;
-    return !expired &&
-        pending?.running == true &&
-        !pending!.stopping &&
-        !conversation.waitingToSend &&
-        (!sendNext ||
-            (synchronized &&
-                !pickingAttachments &&
-                conversation.binding != null &&
-                pendingSessionDeletion(conversation.id) == null));
+    if (expired || conversation.waitingToSend) return false;
+    if (pending?.running == true) {
+      return !pending!.stopping &&
+          (!sendNext ||
+              (synchronized &&
+                  !pickingAttachments &&
+                  conversation.binding != null &&
+                  pendingSessionDeletion(conversation.id) == null));
+    }
+    if (!sendNext && synchronized && activeRun(conversation.id) != null) {
+      return !conversation.stoppingActiveRun;
+    }
+    return false;
   }
 
   bool _canSend(Conversation conversation) =>
@@ -407,11 +442,9 @@ class ChatController extends ChangeNotifier {
   String? get activityLabel {
     final pending = active.submission;
     if (active.waitingToSend) return '正在停止并准备发送';
-    if (pending?.stopping == true) return '正在停止';
+    if (pending?.stopping == true || active.stoppingActiveRun) return '正在停止';
     if (!synchronized) return null;
-    final run = _runs.values
-        .where((run) => run['sessionId'] == activeId)
-        .firstOrNull;
+    final run = activeRun(activeId);
     if (run != null) {
       final label = run['label'] as String?;
       return label?.isNotEmpty == true ? label! : '正在处理';
@@ -423,6 +456,32 @@ class ChatController extends ChangeNotifier {
   void start() {
     reconnect();
     unawaited(refresh(active));
+  }
+
+  static const _resumeReconnectThreshold = Duration(seconds: 5);
+
+  void onAppResumed(Duration? backgroundDuration) {
+    if (_disposed || expired) return;
+    if (!synchronized ||
+        _notificationApi == null ||
+        (backgroundDuration != null &&
+            backgroundDuration >= _resumeReconnectThreshold)) {
+      _retry = 0;
+      reconnect();
+      return;
+    }
+    // 短暂切回前台且长连接仍健康时，避免强杀重连造成状态闪烁，改为轻量对齐历史与在途流。
+    unawaited(refresh(active));
+    for (final conversation in conversations.values) {
+      if (conversation.submission case final Submission pending
+          when !pending.running &&
+              !pending.settled &&
+              !pending.verifying &&
+              !conversation.waitingToSend) {
+        unawaited(_reconcileSubmission(conversation));
+      }
+    }
+    _syncAttachedStream(active);
   }
 
   void reconnect() {
@@ -498,11 +557,20 @@ class ChatController extends ChangeNotifier {
       unawaited(refreshDirectory());
       for (final conversation in conversations.values) {
         unawaited(refresh(conversation));
+        if (conversation.submission case final Submission pending
+            when !pending.running &&
+                !pending.settled &&
+                !pending.verifying &&
+                !conversation.waitingToSend) {
+          unawaited(_reconcileSubmission(conversation));
+        }
       }
+      _syncAttachedStream(active);
     } else if (synchronized && data['instanceId'] == _instanceId) {
       switch (frame.event) {
         case 'session_status_updated':
           _recordRun(data);
+          if (data['sessionId'] == activeId) _syncAttachedStream(active);
         case 'approval_pending':
           _recordApproval(Approval.fromJson(data));
         case 'approval_updated':
@@ -544,6 +612,10 @@ class ChatController extends ChangeNotifier {
       }
       final conversation = conversations[key.$1];
       if (conversation == null) return;
+      conversation.lastRun = run;
+      if (conversation.attachedRunId == key.$2) {
+        conversation.stoppingActiveRun = false;
+      }
       final pending =
           conversation.submission ?? conversation._followUp?.previous;
       final isLocalRun = pending?.runId == key.$2;
@@ -794,7 +866,10 @@ class ChatController extends ChangeNotifier {
   void _forgetSession(String id) {
     _sessionChanges.remove(id);
     final removed = conversations.remove(id);
-    if (removed != null) _clearFollowUp(removed);
+    if (removed != null) {
+      _clearFollowUp(removed);
+      _detachAttachedStream(removed, clearReplies: true);
+    }
     _runs.removeWhere((key, _) => key.$1 == id);
     _lastRuns.remove(id);
     _activityChanges.remove(id);
@@ -808,9 +883,12 @@ class ChatController extends ChangeNotifier {
 
   void select(String id) {
     if (id == activeId) return;
+    final previous = conversations[activeId];
+    if (previous != null) _detachAttachedStream(previous);
     activeId = id;
     conversations.putIfAbsent(id, () => Conversation(id));
     unawaited(refresh(active));
+    _syncAttachedStream(active);
     _changed();
   }
 
@@ -862,6 +940,12 @@ class ChatController extends ChangeNotifier {
           final saved = history.any(
             (message) => message.id == pending.message.id,
           );
+          if (saved &&
+              activeRun(conversation.id) != null &&
+              conversation.liveReplies.isEmpty &&
+              pending.replies.isNotEmpty) {
+            conversation.liveReplies.addAll(pending.replies);
+          }
           if (saved || bindingChanged || binding == null) {
             conversation.submission = null;
           } else if (pending.settled) {
@@ -877,6 +961,7 @@ class ChatController extends ChangeNotifier {
         }
         if (bindingChanged) {
           _clearFollowUp(conversation);
+          _detachAttachedStream(conversation, clearReplies: true);
           conversation._clearDraft();
           conversation._recoveredDrafts.clear();
           conversation._feedbackRequests.clear();
@@ -886,7 +971,24 @@ class ChatController extends ChangeNotifier {
         conversation.binding = binding;
         conversation.missing = binding == null;
         conversation.revision = data['revision'] as String;
+        final lastRun = data['lastRun'];
+        if (lastRun is Json) {
+          conversation.lastRun = lastRun;
+        } else if (data.containsKey('lastRun') && lastRun == null) {
+          conversation.lastRun = null;
+        }
         conversation.history = history;
+        if (conversation.liveUserMessage case final liveUser?
+            when history.any((message) => message.id == liveUser.id)) {
+          conversation.liveUserMessage = null;
+        }
+        if (activeRun(conversation.id) == null &&
+            conversation._attachedStreamApi == null) {
+          conversation.liveReplies.clear();
+          conversation.liveUserMessage = null;
+          conversation.attachedRunId = null;
+          conversation.stoppingActiveRun = false;
+        }
         conversation.historyError = null;
       } while (conversation.dirty && conversation.submission?.running != true);
     } catch (error) {
@@ -898,39 +1000,155 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> verifySubmission() async {
-    final conversation = active;
+  Future<void> verifySubmission() => _reconcileSubmission(active);
+
+  Future<void> _reconcileSubmission(Conversation conversation) async {
     final pending = conversation.submission;
-    if (pending == null ||
+    if (!_owns(conversation) ||
+        pending == null ||
         pending.running ||
+        pending.settled ||
         pending.verifying ||
         conversation.waitingToSend) {
       return;
     }
     pending.verifying = true;
+    pending.reconciling = true;
     _changed();
     try {
-      final response = await api.get(
-        '/api/runs/status',
-        query: {'sessionId': conversation.id, 'runId': pending.runId},
-      );
-      final status = response['status'];
-      if (status is Json &&
-          const [
-            'succeeded',
-            'failed',
-            'cancelled',
-          ].contains(status['status'])) {
+      var run = _runs[(conversation.id, pending.runId)];
+      if (run == null) {
+        final response = await api.get(
+          '/api/runs/status',
+          query: {'sessionId': conversation.id, 'runId': pending.runId},
+        );
+        if (!_owns(conversation) || conversation.submission != pending) return;
+        final status = response['status'];
+        if (status is Json) {
+          _recordRun(status);
+          run = status;
+        }
+      }
+      if (!_owns(conversation) || conversation.submission != pending) return;
+      if (run != null && run['status'] == 'running') {
+        conversation.liveUserMessage = pending.message;
+        conversation.liveReplies
+          ..clear()
+          ..addAll(pending.replies);
+        conversation.submission = null;
+        conversation.error = null;
+        conversation.lastRun = run;
+        _syncAttachedStream(conversation);
+        unawaited(refresh(conversation));
+        return;
+      }
+      if (run != null && _isTerminalStatus(run['status'])) {
         pending.settled = true;
+        pending.reconciling = false;
+        conversation.lastRun = run;
+        conversation.error = null;
       }
     } catch (error) {
       _checkAuth(error);
+      if (!_owns(conversation) || conversation.submission != pending) return;
       if (error is ApiException && error.status == 404 && synchronized) {
         pending.settled = true;
+        pending.reconciling = false;
+        pending.rejection ??= '连接中断，消息未发出，草稿已恢复';
+      } else {
+        pending.reconciling = false;
+        conversation.error = '当前未连上服务器，联网后会自动同步';
       }
     } finally {
       pending.verifying = false;
-      if (!_disposed) await refresh(conversation);
+      if (!_disposed && _owns(conversation)) {
+        if (pending.settled) await refresh(conversation);
+        _changed();
+      }
+    }
+  }
+
+  void _detachAttachedStream(
+    Conversation conversation, {
+    bool clearReplies = false,
+  }) {
+    final streamApi = conversation._attachedStreamApi;
+    conversation._attachedStreamApi = null;
+    streamApi?.close();
+    if (clearReplies) {
+      conversation.attachedRunId = null;
+      conversation.liveReplies.clear();
+      conversation.liveUserMessage = null;
+    }
+  }
+
+  void _syncAttachedStream(Conversation conversation) {
+    if (_disposed ||
+        expired ||
+        !synchronized ||
+        conversation.id != activeId ||
+        conversation.submission?.running == true) {
+      return;
+    }
+    final run = activeRun(conversation.id);
+    if (run == null || run['source'] != 'chat') return;
+    final runId = run['runId'] as String?;
+    if (runId == null || runId.isEmpty) return;
+    if (conversation.attachedRunId == runId &&
+        conversation._attachedStreamApi != null) {
+      return;
+    }
+    _detachAttachedStream(
+      conversation,
+      clearReplies: conversation.attachedRunId != runId,
+    );
+    final transport = openEvents();
+    conversation._attachedStreamApi = transport;
+    conversation.attachedRunId = runId;
+    unawaited(_listenAttachedStream(conversation, runId, transport));
+  }
+
+  Future<void> _listenAttachedStream(
+    Conversation conversation,
+    String runId,
+    MuseApi transport,
+  ) async {
+    final streamed = <String, String>{};
+    bool stillAttached() =>
+        _owns(conversation) &&
+        !expired &&
+        identical(conversation._attachedStreamApi, transport) &&
+        conversation.attachedRunId == runId;
+    try {
+      await for (final frame in transport.streamRun(conversation.id, runId)) {
+        if (!stillAttached()) return;
+        final data = frame.data;
+        switch (data['type']) {
+          case 'TEXT_MESSAGE_CONTENT':
+            final id = data['messageId'] as String;
+            final delta = data['delta'] as String;
+            final updated = (streamed[id] ?? '') + delta;
+            streamed[id] = updated;
+            conversation.liveReplies[id] = updated;
+            _changed();
+          case 'RUN_FINISHED':
+          case 'RUN_ERROR':
+            break;
+        }
+      }
+    } catch (error) {
+      if (identical(conversation._attachedStreamApi, transport)) {
+        _checkAuth(error);
+      }
+    } finally {
+      transport.close();
+      if (identical(conversation._attachedStreamApi, transport)) {
+        conversation._attachedStreamApi = null;
+        if (_owns(conversation)) {
+          unawaited(refresh(conversation));
+          _changed();
+        }
+      }
     }
   }
 
@@ -1186,7 +1404,7 @@ class ChatController extends ChangeNotifier {
         }
       }
       if (!pending._streamTerminal && !pending.settled) {
-        conversation.error = '回复连接中断，正在核对发送结果';
+        pending.reconciling = true;
       }
     } catch (error) {
       _checkAuth(error);
@@ -1199,14 +1417,20 @@ class ChatController extends ChangeNotifier {
         _ => null,
       };
       pending.settled = pending.settled || pending.rejection != null;
-      conversation.error = '消息发送遇到问题，正在核对服务器记录';
+      if (!pending.settled) {
+        pending.reconciling = true;
+      }
     } finally {
       pending.running = false;
       pending.stopping = false;
       pending.settled = pending.settled || pending._streamTerminal;
       pending._closed.complete();
       if (_owns(conversation) && conversation.submission == pending) {
-        unawaited(refresh(conversation));
+        if (pending.settled || conversation.waitingToSend) {
+          unawaited(refresh(conversation));
+        } else if (synchronized) {
+          unawaited(_reconcileSubmission(conversation));
+        }
         _changed();
       }
     }
@@ -1214,7 +1438,38 @@ class ChatController extends ChangeNotifier {
 
   Future<void> stop() async {
     if (!canStop(sendNext: false)) return;
-    await _requestStop(active, active.submission!);
+    final conversation = active;
+    final pending = conversation.submission;
+    if (pending != null && pending.running) {
+      await _requestStop(conversation, pending);
+      return;
+    }
+    final run = activeRun(conversation.id);
+    final runId = run?['runId'] as String?;
+    if (runId == null) return;
+    conversation.stoppingActiveRun = true;
+    var confirmed = false;
+    _changed();
+    try {
+      final result = await api.post('/api/conversation/stop', {
+        'sessionId': conversation.id,
+        'runId': runId,
+      });
+      if (result['stopped'] == true) {
+        confirmed = true;
+        return;
+      }
+    } catch (error) {
+      _checkAuth(error);
+    } finally {
+      conversation.stoppingActiveRun = false;
+      if (!confirmed &&
+          _owns(conversation) &&
+          activeRun(conversation.id)?['runId'] == runId) {
+        conversation.error = '停止尚未确认，可稍后再试';
+      }
+      _changed();
+    }
   }
 
   Future<bool> _requestStop(
@@ -1409,6 +1664,9 @@ class ChatController extends ChangeNotifier {
     _disposed = true;
     _cancelFollowUps();
     _reconnect?.cancel();
+    for (final conversation in conversations.values) {
+      _detachAttachedStream(conversation, clearReplies: true);
+    }
     final transport = _notificationApi;
     _notificationApi = null;
     transport?.close();

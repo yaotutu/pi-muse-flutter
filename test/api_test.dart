@@ -216,5 +216,39 @@ void main() {
       );
       expect(paths, ['/api/events', '/api/conversation/run']);
     });
+
+    test('streamRun queries /api/conversation/stream and decodes SSE frames', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final api = MuseApi(
+        Uri.http('127.0.0.1:${server.port}'),
+        token: 'test-token',
+      );
+      addTearDown(api.close);
+      Uri? requested;
+      String? auth;
+      server.listen((request) async {
+        requested = request.uri;
+        auth = request.headers.value(HttpHeaders.authorizationHeader);
+        await request.drain<void>();
+        final response = request.response;
+        response.headers.contentType = ContentType('text', 'event-stream');
+        response.write(
+          'data: {"type":"RUN_STARTED","sessionId":"main","runId":"r1"}\n\n'
+          'data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"m1","delta":"hello"}\n\n'
+          'data: {"type":"RUN_FINISHED","sessionId":"main","runId":"r1"}\n\n',
+        );
+        await response.close();
+      });
+
+      final frames = await api.streamRun('main', 'r1').toList();
+      expect(requested?.path, '/api/conversation/stream');
+      expect(requested?.queryParameters, {'sessionId': 'main', 'runId': 'r1'});
+      expect(auth, 'Bearer test-token');
+      expect(
+        frames.map((frame) => frame.data['type']),
+        ['RUN_STARTED', 'TEXT_MESSAGE_CONTENT', 'RUN_FINISHED'],
+      );
+    });
   });
 }

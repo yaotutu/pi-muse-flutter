@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'api.dart';
 import 'appearance.dart';
 import 'appearance_page.dart';
 import 'app_update.dart';
@@ -337,10 +338,29 @@ class _ChatPageState extends State<ChatPage> {
                   message.role == 'user' || message.role == 'assistant',
             )
             .toList();
-        final running = conversation.submission?.running == true;
+        final localRunning = conversation.submission?.running == true;
+        final remoteRun = _chat.activeRun(conversation.id);
+        final running = localRunning || remoteRun != null;
         final hasApproval =
             _chat.synchronized && _chat.activeApprovals.isNotEmpty;
         final pending = conversation.submission;
+        final hasLiveReply = localRunning
+            ? pending!.replies.isNotEmpty
+            : conversation.liveReplies.isNotEmpty;
+        final showProcessingCard = running && !hasLiveReply;
+        final String? lastRunStatus =
+            !running &&
+                pending == null &&
+                messages.isNotEmpty &&
+                messages.last.role == 'user'
+            ? (conversation.lastRun?['status'] as String?)
+            : null;
+        final terminalNoticeStatus =
+            lastRunStatus == 'failed' || lastRunStatus == 'cancelled'
+            ? lastRunStatus
+            : null;
+        final footerCount =
+            (showProcessingCard || terminalNoticeStatus != null) ? 1 : 0;
         final activity = hasApproval ? null : _chat.activityLabel;
         final navigation = _WorkspaceNavigationBar(
           selectedIndex: _settingsSelected ? 3 : 0,
@@ -414,7 +434,7 @@ class _ChatPageState extends State<ChatPage> {
                     Expanded(
                       child: PageStorage(
                         bucket: _position,
-                        child: messages.isEmpty
+                        child: messages.isEmpty && footerCount == 0
                             ? Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(20),
@@ -461,12 +481,28 @@ class _ChatPageState extends State<ChatPage> {
                                     keyboardDismissBehavior:
                                         ScrollViewKeyboardDismissBehavior
                                             .onDrag,
-                                    itemCount: messages.length,
+                                    itemCount: messages.length + footerCount,
                                     separatorBuilder: (_, _) =>
                                         const SizedBox(height: 12),
                                     itemBuilder: (context, index) {
+                                      if (footerCount > 0 && index == 0) {
+                                        if (showProcessingCard) {
+                                          return _RunningStatusCard(
+                                            run: remoteRun,
+                                            onTap: () => _openExecutionDetails(
+                                              conversation.id,
+                                              title,
+                                            ),
+                                          );
+                                        }
+                                        return _TerminalRunNotice(
+                                          status: terminalNoticeStatus!,
+                                        );
+                                      }
                                       final position =
-                                          messages.length - index - 1;
+                                          messages.length -
+                                          (index - footerCount) -
+                                          1;
                                       final message = messages[position];
                                       final sentAt = message.sentAt?.toLocal();
                                       final previous = position == 0
@@ -564,12 +600,27 @@ class _ChatPageState extends State<ChatPage> {
                         when !pending.running &&
                             !pending.settled &&
                             !conversation.waitingToSend)
-                      TextButton(
-                        onPressed: pending.verifying
-                            ? null
-                            : _chat.verifySubmission,
-                        child: Text(pending.verifying ? '正在核对…' : '核对发送结果'),
-                      )
+                      if (pending.reconciling || pending.verifying)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          child: Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              '正在同步回复状态…',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        TextButton(
+                          onPressed: _chat.verifySubmission,
+                          child: const Text('当前未连上服务器，点此立即同步'),
+                        )
                     else if (conversation.historyError case final String error)
                       TextButton(
                         onPressed: () => _chat.refresh(conversation),
@@ -751,7 +802,9 @@ class _ChatPageState extends State<ChatPage> {
                                       ? '正在停止并准备发送'
                                       : running
                                       ? hasContent
-                                            ? '停止并发送'
+                                            ? localRunning
+                                                  ? '停止并发送'
+                                                  : '请先停止或等待当前回复完成'
                                             : '停止回复'
                                       : '发送';
                                   return IconButton(
@@ -1467,6 +1520,112 @@ class _FileText extends StatelessWidget {
                   : content!,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RunningStatusCard extends StatelessWidget {
+  const _RunningStatusCard({required this.run, required this.onTap});
+
+  final Json? run;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final rawLabel = run?['label'];
+    final label = rawLabel is String && rawLabel.isNotEmpty
+        ? rawLabel
+        : '助手正在处理中…';
+    final tools = (run?['tools'] as List? ?? const []).cast<Json>();
+    final subagents = (run?['subagents'] as List? ?? const []).cast<Json>();
+    final detail = [
+      if (tools.isNotEmpty) '工具 ${tools.length} 项进行中',
+      if (subagents.isNotEmpty) '子任务 ${subagents.length} 项进行中',
+    ].join(' · ');
+    return Material(
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.hourglass_top_rounded,
+                size: 18,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: theme.textTheme.bodyMedium),
+                    if (detail.isNotEmpty)
+                      Text(
+                        detail,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TerminalRunNotice extends StatelessWidget {
+  const _TerminalRunNotice({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final cancelled = status == 'cancelled';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              cancelled ? Icons.stop_circle_outlined : Icons.info_outline,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                cancelled
+                    ? '上一轮回复已停止'
+                    : '上一轮回复未能完成，你可以重新发送或继续对话',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ],
