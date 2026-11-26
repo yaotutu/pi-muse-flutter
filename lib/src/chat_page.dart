@@ -348,16 +348,26 @@ class _ChatPageState extends State<ChatPage> {
             ? pending!.replies.isNotEmpty
             : conversation.liveReplies.isNotEmpty;
         final showProcessingCard = running && !hasLiveReply;
-        final String? lastRunStatus =
-            !running &&
-                pending == null &&
-                messages.isNotEmpty &&
-                messages.last.role == 'user'
-            ? (conversation.lastRun?['status'] as String?)
+        final lastRun = !running && pending == null && messages.isNotEmpty
+            ? conversation.lastRun
+            : null;
+        final lastRunRunId = lastRun?['runId'] as String?;
+        final matchesLatestTurn =
+            messages.isNotEmpty &&
+            (messages.last.role == 'user' ||
+                (lastRunRunId != null &&
+                    lastRunRunId.isNotEmpty &&
+                    (messages.last.runId == lastRunRunId ||
+                        messages.last.id == 'assistant-$lastRunRunId')));
+        final String? lastRunStatus = matchesLatestTurn
+            ? (lastRun?['status'] as String?)
             : null;
         final terminalNoticeStatus =
             lastRunStatus == 'failed' || lastRunStatus == 'cancelled'
             ? lastRunStatus
+            : null;
+        final terminalNoticeLabel = terminalNoticeStatus != null
+            ? (lastRun?['label'] as String?)
             : null;
         final footerCount =
             (showProcessingCard || terminalNoticeStatus != null) ? 1 : 0;
@@ -497,6 +507,7 @@ class _ChatPageState extends State<ChatPage> {
                                         }
                                         return _TerminalRunNotice(
                                           status: terminalNoticeStatus!,
+                                          label: terminalNoticeLabel,
                                         );
                                       }
                                       final position =
@@ -1593,15 +1604,28 @@ class _RunningStatusCard extends StatelessWidget {
 }
 
 class _TerminalRunNotice extends StatelessWidget {
-  const _TerminalRunNotice({required this.status});
+  const _TerminalRunNotice({required this.status, this.label});
 
   final String status;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final cancelled = status == 'cancelled';
+    final customLabel = label?.trim();
+    final message = cancelled
+        ? (customLabel != null &&
+                  customLabel.isNotEmpty &&
+                  customLabel != '执行已停止'
+              ? customLabel
+              : '上一轮回复已停止')
+        : (customLabel != null &&
+                  customLabel.isNotEmpty &&
+                  customLabel != '执行失败'
+              ? customLabel
+              : '上一轮回复未能完成，你可以重新发送或继续对话');
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
@@ -1620,9 +1644,7 @@ class _TerminalRunNotice extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                cancelled
-                    ? '上一轮回复已停止'
-                    : '上一轮回复未能完成，你可以重新发送或继续对话',
+                message,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),

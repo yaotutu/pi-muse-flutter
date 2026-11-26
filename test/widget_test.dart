@@ -1197,6 +1197,66 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets(
+    'shows timeout notice even when last saved message is a partial assistant transition',
+    (tester) async {
+      final api = _PartialTimeoutApi();
+      final chat = ChatController(api, () => api);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      chat.start();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('我先去查一下资料。'), findsOneWidget);
+      expect(find.text('处理超时，未生成完整回复'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+}
+
+class _PartialTimeoutApi extends _ExecutionApi {
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/conversation') {
+      return {
+        'sessionId': query?['sessionId'],
+        'piSessionId': 'binding',
+        'revision': 'rev-partial',
+        'messages': [
+          {
+            'id': 'u1',
+            'role': 'user',
+            'content': '帮我深入调研一下',
+            'metadata': {'runId': 'timeout-run'},
+          },
+          {
+            'id': 'assistant-timeout-run',
+            'role': 'assistant',
+            'content': '我先去查一下资料。',
+            'metadata': {'runId': 'timeout-run'},
+          },
+        ],
+        'lastRun': {
+          'sessionId': mainSession,
+          'runId': 'timeout-run',
+          'revision': 5,
+          'status': 'failed',
+          'label': '处理超时，未生成完整回复',
+          'endedAt': '2026-11-26T08:12:23Z',
+        },
+      };
+    }
+    return super.get(path, query: query);
+  }
 }
 
 class _RestoredRunApi extends _ExecutionApi {

@@ -37,6 +37,7 @@ class ChatMessage {
     this.attachments = const [],
     this.sentAt,
     this.source,
+    this.runId,
     this.feedbackAvailable = false,
     this.reaction,
     this.saved = false,
@@ -54,6 +55,7 @@ class ChatMessage {
       json['content'] as String? ?? '',
       sentAt: createdAt is String ? DateTime.tryParse(createdAt) : null,
       source: metadata?['source'] as String?,
+      runId: metadata?['runId'] as String?,
       feedbackAvailable: feedbackAvailable,
       reaction: feedbackAvailable ? _readReaction(feedback) : null,
       saved: feedbackAvailable && _readSaved(feedback),
@@ -72,6 +74,7 @@ class ChatMessage {
   final List<ChatAttachment> attachments;
   final DateTime? sentAt;
   final String? source;
+  final String? runId;
   final bool feedbackAvailable;
   final MessageReaction? reaction;
   final bool saved;
