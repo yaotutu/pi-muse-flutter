@@ -175,33 +175,161 @@ typedef _SessionChange = ({
   SessionScheduleDisposition? disposition,
 });
 
+typedef ProposalItem = ({String label, String value});
+
 class Approval {
-  Approval.fromJson(Json json)
-    : id = json['id'] as String,
-      sessionId = json['sessionId'] as String?,
-      revision = json['revision'] as int,
-      status = json['status'] as String,
-      title = json['title'] as String?,
-      execution = json['execution'] as Json?,
-      scope = (json['preview'] as Json)['scope'] as String,
-      path = (json['preview'] as Json)['path'] as String,
-      before = (json['preview'] as Json)['before'] as String,
-      after = (json['preview'] as Json)['after'] as String,
-      beforeExists = (json['preview'] as Json)['beforeExists'] as bool,
-      expiresAt = DateTime.parse(json['expiresAt'] as String);
+  const Approval({
+    required this.id,
+    required this.sessionId,
+    required this.runId,
+    required this.revision,
+    required this.kind,
+    required this.status,
+    required this.title,
+    required this.execution,
+    required this.previewType,
+    required this.scope,
+    required this.path,
+    required this.before,
+    required this.after,
+    required this.beforeExists,
+    required this.category,
+    required this.summary,
+    required this.target,
+    required this.items,
+    required this.confirmLabel,
+    required this.denyLabel,
+    required this.expiresAt,
+  });
+
+  factory Approval.fromJson(Json json) {
+    final preview = json['preview'] as Json;
+    final previewType = preview['type'] as String? ?? 'file_diff';
+    final rawItems = preview['items'] as List? ?? const [];
+    final items = <ProposalItem>[
+      for (final item in rawItems)
+        if (item is Json && item['label'] is String && item['value'] is String)
+          (label: item['label'] as String, value: item['value'] as String),
+    ];
+    return Approval(
+      id: json['id'] as String,
+      sessionId: json['sessionId'] as String?,
+      runId: json['runId'] as String?,
+      revision: json['revision'] as int,
+      kind:
+          json['kind'] as String? ??
+          (previewType == 'proposal' ? 'proposal' : 'file_write'),
+      status: json['status'] as String,
+      title: json['title'] as String?,
+      execution: json['execution'] as Json?,
+      previewType: previewType,
+      scope: preview['scope'] as String? ?? 'workspace',
+      path: preview['path'] as String? ?? '',
+      before: preview['before'] as String? ?? '',
+      after: preview['after'] as String? ?? '',
+      beforeExists: preview['beforeExists'] as bool? ?? false,
+      category: preview['category'] as String? ?? 'general',
+      summary: preview['summary'] as String? ?? '',
+      target: preview['target'] as String?,
+      items: List.unmodifiable(items),
+      confirmLabel: preview['confirmLabel'] as String?,
+      denyLabel: preview['denyLabel'] as String?,
+      expiresAt: DateTime.parse(json['expiresAt'] as String),
+    );
+  }
 
   final String id;
   final String? sessionId;
+  final String? runId;
   final int revision;
+  final String kind;
   final String status;
   final String? title;
   final Json? execution;
+  final String previewType;
   final String scope;
   final String path;
   final String before;
   final String after;
   final bool beforeExists;
+  final String category;
+  final String summary;
+  final String? target;
+  final List<ProposalItem> items;
+  final String? confirmLabel;
+  final String? denyLabel;
   final DateTime expiresAt;
+
+  bool get isFileDiff => previewType == 'file_diff';
+  bool get isProposal => previewType == 'proposal';
+
+  String get displayTitle {
+    final trimmed = title?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    return isFileDiff ? path : summary;
+  }
+
+  String? get targetLabel {
+    if (isFileDiff) return path.isNotEmpty ? path : null;
+    return target?.isNotEmpty == true ? target : null;
+  }
+
+  String get scopeOrCategoryLabel {
+    if (isFileDiff) {
+      return switch (scope) {
+        'skill' => '技能文件',
+        'profile' => '个人设定',
+        'memory' => '长期记忆',
+        'custom' => '自定义目标',
+        _ => '工作区文件',
+      };
+    }
+    return switch (category) {
+      'habit_learning' => '习惯学习',
+      'profile' => '个人设定',
+      _ => kind == 'action' ? '操作确认' : '建议确认',
+    };
+  }
+
+  String get approveButtonLabel {
+    final custom = confirmLabel?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    return isFileDiff ? '批准修改' : '批准';
+  }
+
+  String get denyButtonLabel {
+    final custom = denyLabel?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    return '拒绝';
+  }
+
+  Approval copyWithResolution({
+    required int revision,
+    required String status,
+    required Json? execution,
+  }) => Approval(
+    id: id,
+    sessionId: sessionId,
+    runId: runId,
+    revision: revision,
+    kind: kind,
+    status: status,
+    title: title,
+    execution: execution ?? this.execution,
+    previewType: previewType,
+    scope: scope,
+    path: path,
+    before: before,
+    after: after,
+    beforeExists: beforeExists,
+    category: category,
+    summary: summary,
+    target: target,
+    items: items,
+    confirmLabel: confirmLabel,
+    denyLabel: denyLabel,
+    expiresAt: expiresAt,
+  );
 }
 
 class Submission {
@@ -330,6 +458,7 @@ class ChatController extends ChangeNotifier {
     mainSession: Conversation(mainSession),
   };
   final approvals = <String, Approval>{};
+  final _recentSettledApprovals = <String, Approval>{};
   final _unconfirmedApprovals = <String>{};
   final _approvalRevisions = <String, int>{};
 
@@ -408,6 +537,23 @@ class ChatController extends ChangeNotifier {
 
   List<Approval> sessionApprovals(String id) =>
       approvals.values.where((approval) => approval.sessionId == id).toList();
+
+  List<Approval> chatApprovals(String sessionId) {
+    if (!synchronized) return const [];
+    final latestRunId =
+        (activeRun(sessionId)?['runId'] as String?) ??
+        (conversations[sessionId]?.lastRun?['runId'] as String?);
+    return [
+      for (final settled in _recentSettledApprovals.values)
+        if (settled.sessionId == sessionId &&
+            !approvals.containsKey(settled.id) &&
+            (settled.runId == null ||
+                latestRunId == null ||
+                settled.runId == latestRunId))
+          settled,
+      ...sessionApprovals(sessionId),
+    ];
+  }
 
   bool get pickingAttachments => identical(_attachmentPickerOwner, active);
 
@@ -601,6 +747,8 @@ class ChatController extends ChangeNotifier {
             data['id'] as String,
             data['revision'] as int,
             data['sessionId'] as String?,
+            status: data['status'] as String?,
+            execution: data['execution'] as Json?,
           );
         case 'conversation_updated':
           final conversation = conversations[data['sessionId']];
@@ -696,12 +844,28 @@ class ChatController extends ChangeNotifier {
     if (approval.status == 'pending') approvals[approval.id] = approval;
   }
 
-  void _finishApproval(String id, int revision, String? sessionId) {
+  void _finishApproval(
+    String id,
+    int revision,
+    String? sessionId, {
+    String? status,
+    Json? execution,
+  }) {
     if (revision <= (_approvalRevisions[id] ?? 0)) return;
     _approvalRevisions[id] = revision;
     _unconfirmedApprovals.remove(id);
-    final session = sessionId ?? approvals[id]?.sessionId;
-    approvals.remove(id);
+    final existing = approvals.remove(id) ?? _recentSettledApprovals[id];
+    if (existing != null && status != null && status != 'pending') {
+      _recentSettledApprovals[id] = existing.copyWithResolution(
+        revision: revision,
+        status: status,
+        execution: execution,
+      );
+      if (_recentSettledApprovals.length > 30) {
+        _recentSettledApprovals.remove(_recentSettledApprovals.keys.first);
+      }
+    }
+    final session = sessionId ?? existing?.sessionId;
     if (session != null) {
       _approvalChanges.update(session, (value) => value + 1, ifAbsent: () => 1);
     }
@@ -903,6 +1067,9 @@ class ChatController extends ChangeNotifier {
     _runHistoryChanges.remove(id);
     _approvalChanges.remove(id);
     approvals.removeWhere((_, approval) => approval.sessionId == id);
+    _recentSettledApprovals.removeWhere(
+      (_, approval) => approval.sessionId == id,
+    );
     if (activeId == id) select(mainSession);
   }
 
@@ -995,6 +1162,9 @@ class ChatController extends ChangeNotifier {
           conversation._feedbackRequests.clear();
           conversation.runsById.clear();
           _runHistoryChanges.remove(conversation.id);
+          _recentSettledApprovals.removeWhere(
+            (_, approval) => approval.sessionId == conversation.id,
+          );
           conversation.attachmentError = null;
           conversation.error = null;
         }
@@ -1699,7 +1869,14 @@ class ChatController extends ChangeNotifier {
     }
     _unconfirmedApprovals.remove(approval.id);
     if (approval.status != 'pending') {
-      _finishApproval(approval.id, approval.revision, approval.sessionId);
+      _recentSettledApprovals[approval.id] = approval;
+      _finishApproval(
+        approval.id,
+        approval.revision,
+        approval.sessionId,
+        status: approval.status,
+        execution: approval.execution,
+      );
     }
     _changed();
     return approval;

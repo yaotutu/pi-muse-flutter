@@ -260,8 +260,16 @@ class _ChatPageState extends State<ChatPage> {
           child: ListView.builder(
             itemCount: pending.length,
             itemBuilder: (context, index) => ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: Text(pending[index].path),
+              leading: Icon(
+                pending[index].isProposal
+                    ? Icons.fact_check_outlined
+                    : Icons.description_outlined,
+              ),
+              title: Text(pending[index].displayTitle),
+              subtitle: pending[index].targetLabel != null &&
+                      pending[index].targetLabel != pending[index].displayTitle
+                  ? Text(pending[index].targetLabel!)
+                  : null,
               onTap: () => Navigator.pop(context, pending[index]),
             ),
           ),
@@ -350,6 +358,9 @@ class _ChatPageState extends State<ChatPage> {
         final running = localRunning || remoteRun != null;
         final hasApproval =
             _chat.synchronized && _chat.activeApprovals.isNotEmpty;
+        final allFileDiffApprovals =
+            _chat.activeApprovals.every((approval) => approval.isFileDiff);
+        final chatApprovals = _chat.chatApprovals(conversation.id);
         final pending = conversation.submission;
         final hasLiveReply = localRunning
             ? pending!.replies.isNotEmpty
@@ -376,8 +387,49 @@ class _ChatPageState extends State<ChatPage> {
         final terminalNoticeLabel = terminalNoticeStatus != null
             ? (lastRun?['label'] as String?)
             : null;
-        final footerCount =
-            (showProcessingCard || terminalNoticeStatus != null) ? 1 : 0;
+        final footers = <Widget>[
+          for (final approval in chatApprovals.reversed)
+            _ChatApprovalCard(
+              key: ValueKey('chat-approval-${approval.id}'),
+              chat: _chat,
+              approval: approval,
+              onOpenDetails: () => _showApproval(
+                context,
+                conversation.id,
+                approval.id,
+                approval.status == 'pending' ? approval : null,
+              ),
+            ),
+          if (showProcessingCard)
+            Builder(
+              builder: (_) {
+                final liveKey =
+                    remoteRun?['runId'] as String? ??
+                    '__live_${conversation.id}';
+                return _RunProcessBar(
+                  run: remoteRun,
+                  steps: _chat.stepsOf(remoteRun),
+                  running: true,
+                  expanded: _expandedRuns.contains(liveKey),
+                  onToggle: () => _toggleRunExpanded(liveKey),
+                  onOpenDetails: () =>
+                      _openExecutionDetails(conversation.id, title),
+                  onOpenApproval: (id) => _showApproval(
+                    context,
+                    conversation.id,
+                    id,
+                    _chat.approvals[id],
+                  ),
+                );
+              },
+            )
+          else if (terminalNoticeStatus != null)
+            _TerminalRunNotice(
+              status: terminalNoticeStatus,
+              label: terminalNoticeLabel,
+            ),
+        ];
+        final footerCount = footers.length;
         final activity = hasApproval ? null : _chat.activityLabel;
         final navigation = _WorkspaceNavigationBar(
           selectedIndex: _settingsSelected ? 3 : 0,
@@ -439,12 +491,18 @@ class _ChatPageState extends State<ChatPage> {
                       MaterialBanner(
                         content: Semantics(
                           liveRegion: true,
-                          child: const Text('有文件修改待确认'),
+                          child: Text(
+                            allFileDiffApprovals
+                                ? '有文件修改待确认'
+                                : '有 ${_chat.activeApprovals.length} 项操作待确认',
+                          ),
                         ),
                         actions: [
                           TextButton(
                             onPressed: _openApproval,
-                            child: const Text('查看修改'),
+                            child: Text(
+                              allFileDiffApprovals ? '查看修改' : '查看详情',
+                            ),
                           ),
                         ],
                       ),
@@ -502,37 +560,8 @@ class _ChatPageState extends State<ChatPage> {
                                     separatorBuilder: (_, _) =>
                                         const SizedBox(height: 12),
                                     itemBuilder: (context, index) {
-                                      if (footerCount > 0 && index == 0) {
-                                        if (showProcessingCard) {
-                                          final liveKey =
-                                              remoteRun?['runId'] as String? ??
-                                              '__live_${conversation.id}';
-                                          return _RunProcessBar(
-                                            run: remoteRun,
-                                            steps: _chat.stepsOf(remoteRun),
-                                            running: true,
-                                            expanded: _expandedRuns.contains(
-                                              liveKey,
-                                            ),
-                                            onToggle: () =>
-                                                _toggleRunExpanded(liveKey),
-                                            onOpenDetails: () =>
-                                                _openExecutionDetails(
-                                                  conversation.id,
-                                                  title,
-                                                ),
-                                            onOpenApproval: (id) => _showApproval(
-                                              context,
-                                              conversation.id,
-                                              id,
-                                              _chat.approvals[id],
-                                            ),
-                                          );
-                                        }
-                                        return _TerminalRunNotice(
-                                          status: terminalNoticeStatus!,
-                                          label: terminalNoticeLabel,
-                                        );
+                                      if (index < footerCount) {
+                                        return footers[index];
                                       }
                                       final position =
                                           messages.length -
@@ -1415,25 +1444,9 @@ class _ApprovalPageState extends State<_ApprovalPage> {
 
   Future<void> _decide(Approval approval, bool approve) async {
     final snapshot = widget.chat.workspaceSnapshot;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(approve ? '批准这次修改？' : '拒绝这次修改？'),
-        content: Text(approval.path),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('返回'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(approve ? '确认批准' : '确认拒绝'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await _confirmApprovalDialog(context, approval, approve);
     if (!mounted ||
-        confirmed != true ||
+        !confirmed ||
         !_actionable(approval) ||
         snapshot != widget.chat.workspaceSnapshot) {
       return;
@@ -1498,7 +1511,15 @@ class _ApprovalPageState extends State<_ApprovalPage> {
       return PopScope(
         canPop: !_busy,
         child: Scaffold(
-          appBar: AppBar(title: Text(_history ? '审批详情' : '确认文件修改')),
+          appBar: AppBar(
+            title: Text(
+              _history
+                  ? '审批详情'
+                  : approval.isFileDiff
+                  ? '确认文件修改'
+                  : '确认操作',
+            ),
+          ),
           body: SafeArea(
             child: Column(
               children: [
@@ -1508,33 +1529,20 @@ class _ApprovalPageState extends State<_ApprovalPage> {
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                       children: [
                         Text(
-                          approval.path,
+                          approval.displayTitle,
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        Text(approval.scope == 'skill' ? '技能文件' : '工作区文件'),
-                        if (approval.status == 'approved' ||
-                            execution != null) ...[
+                        const SizedBox(height: 4),
+                        Text(approval.scopeOrCategoryLabel),
+                        if (_executionReceiptText(approval, execution)
+                            case final String receipt) ...[
                           const SizedBox(height: 12),
-                          Text(switch (execution?['status']) {
-                            'running' => '文件提交中',
-                            'succeeded' => '文件已写入',
-                            'failed' => '文件写入失败',
-                            'cancelled' => '文件写入已取消',
-                            'unknown' => '文件写入结果待核对',
-                            _ => '尚未收到文件执行回执',
-                          }),
+                          Text(receipt),
                           if (execution?['result'] case final String result)
                             Text(result),
                         ],
                         const SizedBox(height: 18),
-                        _FileText(
-                          label: '修改前',
-                          content: approval.beforeExists
-                              ? approval.before
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        _FileText(label: '修改后', content: approval.after),
+                        _ApprovalPreviewBody(approval: approval),
                       ],
                     ),
                   ),
@@ -1570,11 +1578,11 @@ class _ApprovalPageState extends State<_ApprovalPage> {
                       else if (actionable) ...[
                         OutlinedButton(
                           onPressed: () => _decide(approval, false),
-                          child: const Text('拒绝'),
+                          child: Text(approval.denyButtonLabel),
                         ),
                         FilledButton(
                           onPressed: () => _decide(approval, true),
-                          child: const Text('批准修改'),
+                          child: Text(approval.approveButtonLabel),
                         ),
                       ] else
                         TextButton(
@@ -1591,6 +1599,361 @@ class _ApprovalPageState extends State<_ApprovalPage> {
       );
     },
   );
+}
+
+Future<bool> _confirmApprovalDialog(
+  BuildContext context,
+  Approval approval,
+  bool approve,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(
+        approve
+            ? (approval.isFileDiff ? '批准这次修改？' : '确认执行该操作？')
+            : (approval.isFileDiff ? '拒绝这次修改？' : '拒绝该请求？'),
+      ),
+      content: Text(approval.targetLabel ?? approval.displayTitle),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('返回'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(approve ? '确认批准' : '确认拒绝'),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+String? _executionReceiptText(Approval approval, Json? execution) {
+  if (approval.status != 'approved' && execution == null) return null;
+  if (approval.isFileDiff) {
+    return switch (execution?['status']) {
+      'running' => '文件提交中',
+      'succeeded' => '文件已写入',
+      'failed' => '文件写入失败',
+      'cancelled' => '文件写入已取消',
+      'unknown' => '文件写入结果待核对',
+      _ => '尚未收到文件执行回执',
+    };
+  }
+  return switch (execution?['status']) {
+    'running' => '执行中',
+    'succeeded' => '已执行',
+    'failed' => '执行失败',
+    'cancelled' => '已取消',
+    'unknown' => '执行结果待核对',
+    _ => null,
+  };
+}
+
+class _ApprovalPreviewBody extends StatelessWidget {
+  const _ApprovalPreviewBody({required this.approval, this.compact = false});
+
+  final Approval approval;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    if (approval.isFileDiff) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (compact && approval.path.isNotEmpty) ...[
+            Text(
+              approval.path,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          _FileText(
+            label: '修改前',
+            content: approval.beforeExists ? approval.before : null,
+          ),
+          const SizedBox(height: 12),
+          _FileText(label: '修改后', content: approval.after),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (approval.summary.isNotEmpty)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(approval.summary, style: theme.textTheme.bodyMedium),
+            ),
+          ),
+        if (approval.target case final String target when target.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            '影响目标：$target',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (approval.items.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < approval.items.length; i++) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${approval.items[i].label}：',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            approval.items[i].value,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (i != approval.items.length - 1) const SizedBox(height: 6),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ChatApprovalCard extends StatefulWidget {
+  const _ChatApprovalCard({
+    super.key,
+    required this.chat,
+    required this.approval,
+    required this.onOpenDetails,
+  });
+
+  final ChatController chat;
+  final Approval approval;
+  final VoidCallback onOpenDetails;
+
+  @override
+  State<_ChatApprovalCard> createState() => _ChatApprovalCardState();
+}
+
+class _ChatApprovalCardState extends State<_ChatApprovalCard> {
+  late bool _expanded = widget.approval.isProposal ||
+      (widget.approval.before.length + widget.approval.after.length <= 240);
+  bool _busy = false;
+  bool _unknown = false;
+
+  bool get _actionable =>
+      widget.approval.status == 'pending' &&
+      widget.chat.synchronized &&
+      widget.chat.approvals[widget.approval.id]?.revision ==
+          widget.approval.revision &&
+      widget.approval.expiresAt.isAfter(DateTime.now());
+
+  Future<void> _decide(bool approve) async {
+    final approval = widget.approval;
+    final snapshot = widget.chat.workspaceSnapshot;
+    final confirmed = await _confirmApprovalDialog(context, approval, approve);
+    if (!mounted ||
+        !confirmed ||
+        !_actionable ||
+        snapshot != widget.chat.workspaceSnapshot) {
+      return;
+    }
+    await _run(() => widget.chat.decide(approval, approve));
+  }
+
+  Future<void> _run(Future<Approval> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+      if (mounted) setState(() => _unknown = false);
+    } catch (_) {
+      if (mounted) setState(() => _unknown = true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final approval = widget.approval;
+    final isPending = approval.status == 'pending';
+    final needsVerify =
+        isPending &&
+        (_unknown || widget.chat.approvalNeedsVerification(approval.id));
+    final receipt = _executionReceiptText(approval, approval.execution);
+    final statusText = isPending
+        ? (approval.expiresAt.isAfter(DateTime.now()) ? '待你确认' : '已过期，等待同步')
+        : executionStatus(approval.status);
+    final borderColor = isPending ? colors.primary : colors.outlineVariant;
+    final surfaceColor = isPending
+        ? colors.primaryContainer.withValues(alpha: 0.25)
+        : colors.surfaceContainerLow;
+    final statusColor = switch (approval.status) {
+      'pending' => colors.primary,
+      'approved' => colors.tertiary,
+      'denied' || 'expired' => colors.error,
+      _ => colors.onSurfaceVariant,
+    };
+
+    return Material(
+      color: surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: borderColor, width: isPending ? 1.5 : 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  approval.isProposal
+                      ? Icons.fact_check_outlined
+                      : Icons.edit_note_rounded,
+                  size: 20,
+                  color: statusColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    approval.displayTitle,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    child: Text(
+                      statusText,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              [
+                approval.scopeOrCategoryLabel,
+                if (approval.targetLabel case final String target
+                    when target != approval.displayTitle)
+                  target,
+              ].join(' · '),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            if (receipt != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                [
+                  receipt,
+                  if (approval.execution?['result'] case final String detail
+                      when detail.isNotEmpty)
+                    detail,
+                ].join(' · '),
+                style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
+              ),
+            ],
+            if (_expanded) ...[
+              const SizedBox(height: 10),
+              _ApprovalPreviewBody(approval: approval, compact: true),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (approval.isFileDiff)
+                  TextButton(
+                    onPressed: () => setState(() => _expanded = !_expanded),
+                    child: Text(_expanded ? '收起对比' : '展开完整对比'),
+                  ),
+                TextButton(
+                  onPressed: widget.onOpenDetails,
+                  child: const Text('查看全文'),
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (needsVerify)
+                  TextButton(
+                    onPressed: widget.chat.synchronized
+                        ? () => _run(() => widget.chat.checkApproval(approval))
+                        : null,
+                    child: const Text('核对状态'),
+                  )
+                else if (_actionable) ...[
+                  OutlinedButton(
+                    onPressed: () => _decide(false),
+                    child: Text(approval.denyButtonLabel),
+                  ),
+                  FilledButton(
+                    onPressed: () => _decide(true),
+                    child: Text(approval.approveButtonLabel),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _FileText extends StatelessWidget {

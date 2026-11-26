@@ -1133,4 +1133,99 @@ void main() {
       expect(chat.stepsOf(chat.runForMessage(mainSession, updated)).length, 1);
     },
   );
+
+  test(
+    'Approval.fromJson parses file_diff and proposal previews and chatApprovals keeps settled cards until next run',
+    () async {
+      final api = _Transport();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.stream.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await _tick();
+
+      api.stream.add(
+        const SseFrame(
+          event: 'approval_pending',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'prop-1',
+            'sessionId': mainSession,
+            'runId': 'run-prop',
+            'revision': 1,
+            'kind': 'proposal',
+            'status': 'pending',
+            'title': '采纳一条习惯偏好',
+            'preview': {
+              'type': 'proposal',
+              'category': 'habit_learning',
+              'summary': '回答调研问题时先给出一句结论。',
+              'target': 'USER.md',
+              'items': [
+                {'label': '依据', 'value': '多次点赞反馈'},
+              ],
+              'confirmLabel': '采纳',
+              'denyLabel': '暂不',
+            },
+            'execution': null,
+            'expiresAt': '2099-01-01T00:00:00.000Z',
+          },
+        ),
+      );
+      await _tick();
+
+      final pending = chat.chatApprovals(mainSession).single;
+      expect(pending.isProposal, isTrue);
+      expect(pending.approveButtonLabel, '采纳');
+      expect(pending.denyButtonLabel, '暂不');
+      expect(pending.items.single.label, '依据');
+
+      api.stream.add(
+        const SseFrame(
+          event: 'approval_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'prop-1',
+            'sessionId': mainSession,
+            'runId': 'run-prop',
+            'revision': 2,
+            'status': 'approved',
+            'execution': {'status': 'succeeded', 'result': '已追加偏好'},
+          },
+        ),
+      );
+      await _tick();
+
+      expect(chat.sessionApprovals(mainSession), isEmpty);
+      final settled = chat.chatApprovals(mainSession).single;
+      expect(settled.status, 'approved');
+      expect(settled.execution?['result'], '已追加偏好');
+
+      // Moving to a new run naturally clears previous settled cards from chatApprovals.
+      api.stream.add(
+        const SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': 'run-next',
+            'revision': 1,
+            'status': 'running',
+            'label': '正在处理',
+          },
+        ),
+      );
+      await _tick();
+      expect(chat.chatApprovals(mainSession), isEmpty);
+    },
+  );
 }

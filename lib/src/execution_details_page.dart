@@ -149,16 +149,23 @@ class _ExecutionDetailsPageState extends State<ExecutionDetailsPage>
                   }
                   final items = widget.chat.sessionApprovals(widget.sessionId);
                   if (items.isEmpty) {
-                    return const Center(child: Text('当前没有待审批的修改'));
+                    return const Center(child: Text('当前没有待审批的请求'));
                   }
                   return ListView.builder(
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
+                      final target = item.targetLabel;
                       return ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(item.title ?? item.path),
-                        subtitle: item.title == null ? null : Text(item.path),
+                        leading: Icon(
+                          item.isProposal
+                              ? Icons.fact_check_outlined
+                              : Icons.description_outlined,
+                        ),
+                        title: Text(item.displayTitle),
+                        subtitle: target != null && target != item.displayTitle
+                            ? Text(target)
+                            : null,
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () =>
                             widget.openApproval(context, item.id, item),

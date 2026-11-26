@@ -1374,6 +1374,184 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets(
+    'inline file and proposal approval cards render in chat, expand diff, confirm and update in place',
+    (tester) async {
+      final api = _InlineApprovalApi();
+      final chat = ChatController(api, () => api);
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, appearance: appearance, onConnection: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final longAfter = 'LINE\n' * 80;
+      api.frames.add(
+        SseFrame(
+          event: 'approval_pending',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'ap-file',
+            'sessionId': mainSession,
+            'runId': 'run-1',
+            'revision': 1,
+            'kind': 'file_write',
+            'status': 'pending',
+            'title': '写入 shared/plan.md',
+            'preview': {
+              'type': 'file_diff',
+              'scope': 'workspace',
+              'path': 'shared/plan.md',
+              'before': '',
+              'after': longAfter,
+              'beforeExists': false,
+            },
+            'execution': null,
+            'expiresAt': '2099-01-01T00:00:00.000Z',
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('写入 shared/plan.md'), findsOneWidget);
+      expect(find.text('待你确认'), findsOneWidget);
+      expect(find.text('展开完整对比'), findsOneWidget);
+      expect(find.text('修改后'), findsNothing);
+
+      await tester.tap(find.text('展开完整对比'));
+      await tester.pumpAndSettle();
+      expect(find.text('修改后'), findsOneWidget);
+
+      await tester.tap(find.text('批准修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('批准这次修改？'), findsOneWidget);
+
+      api.nextResponse = {
+        'id': 'ap-file',
+        'sessionId': mainSession,
+        'runId': 'run-1',
+        'revision': 2,
+        'kind': 'file_write',
+        'status': 'approved',
+        'title': '写入 shared/plan.md',
+        'preview': {
+          'type': 'file_diff',
+          'scope': 'workspace',
+          'path': 'shared/plan.md',
+          'before': '',
+          'after': longAfter,
+          'beforeExists': false,
+        },
+        'execution': {'status': 'succeeded', 'result': '已写入目标文件'},
+        'expiresAt': '2099-01-01T00:00:00.000Z',
+      };
+      await tester.tap(find.text('确认批准'));
+      await tester.pumpAndSettle();
+      expect(api.decisions, [('ap-file', 'approve')]);
+      expect(find.text('已批准'), findsOneWidget);
+      expect(find.textContaining('文件已写入'), findsOneWidget);
+
+      // Next: generic proposal approval renders inline summary + items and custom button.
+      api.frames.add(
+        const SseFrame(
+          event: 'approval_pending',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'ap-prop',
+            'sessionId': mainSession,
+            'runId': 'run-2',
+            'revision': 1,
+            'kind': 'proposal',
+            'status': 'pending',
+            'title': '采纳一条学习偏好',
+            'preview': {
+              'type': 'proposal',
+              'category': 'habit_learning',
+              'summary': '下次总结先列三条结论。',
+              'target': 'USER.md',
+              'items': [
+                {'label': '观察来源', 'value': '最近对话偏好'},
+              ],
+              'confirmLabel': '采纳',
+              'denyLabel': '暂不',
+            },
+            'execution': null,
+            'expiresAt': '2099-01-01T00:00:00.000Z',
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('采纳一条学习偏好'), findsOneWidget);
+      expect(find.text('下次总结先列三条结论。'), findsOneWidget);
+      expect(find.text('最近对话偏好'), findsOneWidget);
+      expect(find.text('采纳'), findsOneWidget);
+
+      await tester.tap(find.text('暂不'));
+      await tester.pumpAndSettle();
+      api.nextResponse = {
+        'id': 'ap-prop',
+        'sessionId': mainSession,
+        'runId': 'run-2',
+        'revision': 2,
+        'kind': 'proposal',
+        'status': 'denied',
+        'title': '采纳一条学习偏好',
+        'preview': {
+          'type': 'proposal',
+          'category': 'habit_learning',
+          'summary': '下次总结先列三条结论。',
+          'target': 'USER.md',
+          'items': [
+            {'label': '观察来源', 'value': '最近对话偏好'},
+          ],
+          'confirmLabel': '采纳',
+          'denyLabel': '暂不',
+        },
+        'execution': null,
+        'expiresAt': '2099-01-01T00:00:00.000Z',
+      };
+      await tester.tap(find.text('确认拒绝'));
+      await tester.pumpAndSettle();
+      expect(api.decisions, [('ap-file', 'approve'), ('ap-prop', 'deny')]);
+      expect(find.text('已拒绝'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+}
+
+class _InlineApprovalApi extends _ExecutionApi {
+  final decisions = <(String, String)>[];
+  late Json nextResponse;
+
+  @override
+  Future<Json> post(String path, Json body) async {
+    final match = RegExp(r'^/api/approvals/([^/]+)/decision$').firstMatch(path);
+    if (match != null) {
+      decisions.add((match.group(1)!, body['decision'] as String));
+      return nextResponse;
+    }
+    return super.post(path, body);
+  }
 }
 
 class _PartialTimeoutApi extends _ExecutionApi {
