@@ -223,6 +223,41 @@ class _ExecutionApi extends _SessionApi {
           },
           'execution': {'status': 'failed', 'result': '目标文件版本已变化'},
         };
+      case '/api/jobs':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'jobs': [
+            {
+              'id': 'job-1',
+              'title': '每日早报',
+              'prompt': '整理今天的科技新闻',
+              'kind': 'job',
+              'daily': true,
+              'at': '08:30',
+              'enabled': true,
+              'status': 'scheduled',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+              'error': null,
+            },
+          ],
+        };
+      case '/api/monitors':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'monitors': [
+            {
+              'id': 'mon-1',
+              'title': '官网更新监控',
+              'url': 'https://example.com',
+              'condition': 'change',
+              'intervalMinutes': 30,
+              'status': 'active',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'checks': 2,
+            },
+          ],
+        };
       default:
         return super.get(path, query: query);
     }
@@ -281,10 +316,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '保留草稿');
-      await tester.tap(find.byTooltip('执行详情'));
+      await tester.tap(find.byTooltip('会话详情'));
       await tester.pumpAndSettle();
+      expect(find.text('会话详情'), findsOneWidget);
       expect(find.text('执行记录'), findsOneWidget);
       expect(find.text('审批'), findsOneWidget);
+      expect(find.text('定时任务'), findsOneWidget);
       expect(find.text('默认会话'), findsNothing);
       expect(find.text('动态'), findsNothing);
       expect(find.text('历史'), findsNothing);
@@ -299,7 +336,7 @@ void main() {
       expect(find.text('任务 · 第二轮读取'), findsOneWidget);
       expect(find.text('读取测试文件 · test.txt'), findsOneWidget);
       expect(find.text('第二轮读取'), findsNothing);
-      await tester.tap(find.text('审批'));
+      await tester.tap(find.widgetWithText(Tab, '审批'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看审批历史'));
       await tester.pumpAndSettle();
@@ -312,6 +349,12 @@ void main() {
       expect(find.text('批准修改'), findsNothing);
       await tester.pageBack();
       await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, '定时任务'));
+      await tester.pumpAndSettle();
+      expect(find.text('每日早报'), findsOneWidget);
+      expect(find.textContaining('每天 08:30'), findsOneWidget);
+      expect(find.text('官网更新监控'), findsOneWidget);
+      expect(find.textContaining('每 30 分钟'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.text('保留草稿'), findsOneWidget);

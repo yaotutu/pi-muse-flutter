@@ -6,9 +6,9 @@
 
 点左上角打开侧边栏，选择会话或点「新建会话」。顶部居中显示当前会话名称。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。回复实时显示，发出消息后即使切到后台或退出应用，服务端也会继续执行；回到前台或重新打开后客户端会自动恢复进度或显示结果（仅持续离线未能同步时提供「立即同步」）。需要人工确认或文件修改审批时，对话底部会直接弹出可操作的审批卡片（支持文件对比及通用建议/操作确认），可直接展开对比并批准或拒绝，也可以点「查看全文」全屏核对。
 
-### 查看执行详情
+### 查看会话详情
 
-当助手正在处理请求时，聊天输入框上方会紧凑展示最新一条正在进行的动作；正常完成后自动收起，保持聊天区域简洁（纯文本问答或失败/中断提示除外）。点该提示或聊天右上角的「执行详情」，可切换到两个独立标签页：**执行记录**以连续时间轴直接呈现当前会话的全部操作动作与脱敏摘要（不再套外层总任务卡片或重复显示会话标题），并在任务切换处标出轻量来源标记，关联待审批的节点可直接跳到审批页；**审批**作为独立板块集中展示待处理的修改确认（默认 24 小时审批窗口，批准后原任务原地继续）和历史审批记录，历史预览会同时显示审批结果与实际执行回执。返回键回到聊天，草稿和正在生成的回复会保留。
+当助手正在处理请求时，聊天输入框上方会紧凑展示最新一条正在进行的动作；正常完成后自动收起，保持聊天区域简洁（纯文本问答或失败/中断提示除外）。点该提示或聊天右上角的「会话详情」（`...`），可切换到三个独立标签页：**执行记录**以连续时间轴直接呈现当前会话的全部操作动作与脱敏摘要（不再套外层总任务卡片或重复显示会话标题），并在任务切换处标出轻量来源标记，关联待审批的节点可直接跳到审批页；**审批**作为独立板块集中展示待处理的修改确认（默认 24 小时审批窗口，批准后原任务原地继续）和历史审批记录，历史预览会同时显示审批结果与实际执行回执；**定时任务**集中列出归属当前会话的定时任务与网页监控。返回键回到聊天，草稿和正在生成的回复会保留。
 
 ### 操作消息
 
@@ -91,9 +91,9 @@ This standalone Flutter Android preview does not require a React Native checkout
 
 Open the drawer with the top-left menu button to switch sessions or tap **新建会话** (New session). The centered title displays the current session name. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. Replies stream into the conversation, and the server continues running even if you background or close the app; returning automatically reattaches live progress or shows the saved reply (manual **立即同步** appears only if offline reconciliation fails). When an action or file change requires approval, an interactive approval card appears directly inside the chat stream (supporting both file-diff comparisons and general proposal confirmations), letting you inspect full previews and approve or deny in place.
 
-### View execution details
+### View session details
 
-While a run is active, a compact single-line live bar above the composer shows only the latest active action and clears automatically when the reply completes normally; tap it or tap **执行详情** (Execution details) in the top right of chat to open the two-tab panel: **执行记录** (Execution records) presents all concrete steps across the current conversation directly on a flat chronological timeline (without outer parent-task cards or repeating the session title below the tabs), marking transitions between parent tasks with a lightweight source label and linking approval steps directly to approval details; **审批** (Approvals) stays dedicated to pending confirmations (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and execution receipt. Use Back to return to the conversation with the draft and any in-progress reply intact.
+While a run is active, a compact single-line live bar above the composer shows only the latest active action and clears automatically when the reply completes normally; tap it or tap **会话详情** (Session details, `...`) in the top right of chat to open the three-tab panel: **执行记录** (Execution records) presents all concrete steps across the current conversation directly on a flat chronological timeline (without outer parent-task cards or repeating the session title below the tabs), marking transitions between parent tasks with a lightweight source label and linking approval steps directly to approval details; **审批** (Approvals) stays dedicated to pending confirmations (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and execution receipt; **定时任务** (Schedules) lists scheduled jobs and web monitors belonging to the current session. Use Back to return to the conversation with the draft and any in-progress reply intact.
 
 ### Message actions
 

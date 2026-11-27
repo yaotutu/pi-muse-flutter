@@ -439,12 +439,12 @@ class _ChatPageState extends State<ChatPage> {
                 width: 76,
                 child: Center(
                   child: IconButton(
-                    tooltip: '执行详情',
+                    tooltip: '会话详情',
                     onPressed: () =>
                         _openExecutionDetails(conversation.id),
                     icon: Badge(
                       isLabelVisible: hasApproval,
-                      child: const Icon(Icons.monitor_heart_outlined),
+                      child: const Icon(Icons.more_horiz),
                     ),
                   ),
                 ),
