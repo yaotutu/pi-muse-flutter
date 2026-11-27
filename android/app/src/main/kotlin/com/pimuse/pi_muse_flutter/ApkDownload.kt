@@ -20,6 +20,7 @@ internal class ApkDownload(
     private val assetName: String,
     private val size: Long,
     private val sha256: String,
+    private val downloadUrl: String? = null,
 ) {
     @Volatile private var cancelled = false
     @Volatile private var call: Call? = null
@@ -29,6 +30,13 @@ internal class ApkDownload(
         require(assetName in assetNames)
         require(size in 1..MAX_BYTES)
         require(Regex("[0-9a-f]{64}").matches(sha256))
+        if (downloadUrl != null) {
+            val parsed = downloadUrl.toHttpUrl()
+            require(parsed.scheme == "http" || parsed.scheme == "https")
+            require(parsed.username.isEmpty() && parsed.password.isEmpty())
+            require(parsed.query == null && parsed.fragment == null)
+            require(parsed.encodedPath == "/updates/android/apk/v$version/$assetName")
+        }
     }
 
     fun cancel() {
@@ -54,7 +62,9 @@ internal class ApkDownload(
     }
 
     private fun transfer(file: File, onProgress: (Long) -> Unit) {
-        var url = "https://github.com/yaotutu/pi-muse-flutter/releases/download/v$version/$assetName".toHttpUrl()
+        val mirrorUrl = downloadUrl?.toHttpUrl()
+        var url = mirrorUrl
+            ?: "https://github.com/yaotutu/pi-muse-flutter/releases/download/v$version/$assetName".toHttpUrl()
         repeat(4) {
             val request = Request.Builder().url(url).header("Accept-Encoding", "identity").build()
             val currentCall = client.newCall(request)
@@ -62,6 +72,7 @@ internal class ApkDownload(
             check(!cancelled)
             currentCall.execute().use { response ->
                 if (response.isRedirect) {
+                    check(mirrorUrl == null)
                     val next = url.resolve(checkNotNull(response.header("Location")))
                     check(next != null && next.isHttps && next.port == 443 &&
                         next.username.isEmpty() && next.password.isEmpty() && next.fragment == null &&

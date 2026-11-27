@@ -48,7 +48,7 @@
 
 ### 应用更新
 
-正式版启动时检查 GitHub，应用在前台期间每小时再检查一次。也可从「设置 → 应用更新」手动检查。发现新版本后，应用优先下载与当前 Android 进程架构匹配的较小安装包，缺少匹配包时自动下载通用包 `app-release.apk`。下载中可取消，同一次运行中可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
+正式版启动时和前后台停留每小时会自动检查更新；也可从「设置 → 应用更新」手动检查。已连接 Pi Muse 服务端时优先通过你自己的服务端镜像（`/updates/android/latest` 与 `/updates/android/apk/...`）检查并下载安装包，无需手机端直连 GitHub；未连接服务端时回退官方 GitHub Releases。发现新版本后，应用优先下载与当前 Android 进程架构匹配的较小安装包，缺少匹配包时自动下载通用包 `app-release.apk`。下载中可取消，同一次运行中可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
 
 首次安装或不确定设备架构时，请从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载 `app-release.apk`。发布页提供拆分包时，也可按设备架构选择 `arm64-v8a`、`armeabi-v7a` 或 `x86_64`。后续覆盖安装需要相同的包名和签名。若设备上装的是开发调试包，请先卸载调试版。卸载会清除该客户端的本机数据。
 
@@ -133,7 +133,7 @@ Import only writes messages to the server’s archive queue; it does not start m
 
 ### App updates
 
-The release build checks GitHub at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). When a new version is available, the app prefers the smaller APK that matches its running Android process architecture. If no matching APK is available, it downloads the universal `app-release.apk`. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
+The release build checks for updates at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). When connected to a Pi Muse server, updates are fetched from your server's mirrored release channel (`/updates/android/latest` and `/updates/android/apk/...`), avoiding direct GitHub rate limits on mobile devices; when disconnected, it falls back to GitHub Releases. When a new version is available, the app prefers the smaller APK that matches its running Android process architecture. If no matching APK is available, it downloads the universal `app-release.apk`. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
 
 For a first install or if you are unsure which architecture your device uses, download `app-release.apk` from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases). When the release provides split APKs, you can choose the one for `arm64-v8a`, `armeabi-v7a` or `x86_64`. Android updates require the same package ID and signing certificate. If a development debug build is installed, uninstall it before installing the release APK. Uninstalling clears the client's local data.
 

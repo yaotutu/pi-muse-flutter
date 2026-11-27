@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -297,5 +299,104 @@ void main() {
       expect(controller.currentVersion, '0.1.0');
       expect(controller.status, AppUpdateStatus.unsupported);
     });
+
+    test('已连接服务端时优先走服务端更新镜像并携带同源 downloadUrl', () async {
+      await HttpOverrides.runWithHttpOverrides(() async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final origin = Uri.parse('http://127.0.0.1:${server.port}');
+        var refreshes = 0;
+        var latestRequests = 0;
+        var syncReady = false;
+        server.listen((req) async {
+          if (req.method == 'POST' && req.uri.path == '/updates/android/refresh') {
+            refreshes++;
+            req.response
+              ..statusCode = 202
+              ..headers.contentType = ContentType.json
+              ..write('{"accepted":true}');
+            await req.response.close();
+            return;
+          }
+          if (req.method == 'GET' && req.uri.path == '/updates/android/latest') {
+            latestRequests++;
+            if (!syncReady) {
+              req.response
+                ..statusCode = 503
+                ..headers.contentType = ContentType.json
+                ..write('{"error":"No mirrored Android release available"}');
+              await req.response.close();
+              return;
+            }
+            req.response
+              ..statusCode = 200
+              ..headers.contentType = ContentType.json
+              ..write(
+                jsonEncode({
+                  'draft': false,
+                  'prerelease': false,
+                  'tag_name': 'v0.1.12',
+                  'assets': [
+                    {
+                      'name': 'app-release.apk',
+                      'size': 2048,
+                      'digest': 'sha256:$checksum',
+                      'browser_download_url':
+                          '/updates/android/apk/v0.1.12/app-release.apk',
+                    },
+                  ],
+                }),
+              );
+            await req.response.close();
+            return;
+          }
+          req.response.statusCode = 404;
+          await req.response.close();
+        });
+
+        final client = HttpClient();
+        addTearDown(() => client.close(force: true));
+        await expectLater(
+          getLatestRelease(client, serverOrigin: origin, manual: true),
+          throwsA(
+            isA<ReleaseCheckException>().having(
+              (e) => e.message,
+              'message',
+              contains('正在同步'),
+            ),
+          ),
+        );
+        expect(refreshes, 1);
+        expect(latestRequests, 1);
+
+        syncReady = true;
+        Map<Object?, Object?>? downloadArgs;
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          switch (call.method) {
+            case 'device':
+              return device;
+            case 'download':
+              downloadArgs = Map<Object?, Object?>.from(call.arguments as Map);
+              return true;
+            case 'install':
+              return true;
+            default:
+              throw StateError('Unexpected method ${call.method}');
+          }
+        });
+
+        final controller = AppUpdateController(serverOrigin: origin);
+        addTearDown(controller.dispose);
+        controller.setForeground(true);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(controller.release?.version, '0.1.12');
+        expect(
+          downloadArgs?['downloadUrl'],
+          'http://127.0.0.1:${server.port}/updates/android/apk/v0.1.12/app-release.apk',
+        );
+      }, _RealHttpOverrides());
+    });
   });
 }
+
+class _RealHttpOverrides extends HttpOverrides {}

@@ -29,6 +29,7 @@ class AppUpdateBridge {
             'assetName': release.assetName,
             'size': release.size,
             'sha256': release.sha256,
+            'downloadUrl': ?release.downloadUrl,
           }) ==
           true;
     } finally {

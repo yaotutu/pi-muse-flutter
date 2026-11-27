@@ -44,10 +44,8 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    final binding = WidgetsBinding.instance;
-    binding.addObserver(this);
+    WidgetsBinding.instance.addObserver(this);
     _updates.addListener(_notifyAppUpdate);
-    _updates.setForeground(binding.lifecycleState == AppLifecycleState.resumed);
     _restore();
   }
 
@@ -89,7 +87,11 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   Future<void> _restore() async {
     await Future.wait([_restoreConnection(), _appearance.restore()]);
     unawaited(SmsSync.resume());
-    if (mounted) setState(() => _loading = false);
+    if (!mounted) return;
+    setState(() => _loading = false);
+    _updates.setForeground(
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+    );
   }
 
   Future<void> _restoreConnection() async {
@@ -110,6 +112,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   void _useConnection(Uri address, String token) {
     _chat?.dispose();
     _address = address;
+    _updates.setServerOrigin(address);
     _chat = ChatController(
       MuseApi(address, token: token),
       () => MuseApi(address, token: token),
@@ -137,7 +140,9 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _updates.setForeground(state == AppLifecycleState.resumed);
+    if (!_loading || state != AppLifecycleState.resumed) {
+      _updates.setForeground(state == AppLifecycleState.resumed);
+    }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {

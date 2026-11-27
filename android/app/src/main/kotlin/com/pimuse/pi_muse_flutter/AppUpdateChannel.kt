@@ -35,6 +35,7 @@ internal class AppUpdateChannel(private val activity: MainActivity, messenger: B
                             requireNotNull(call.argument<String>("assetName")),
                             requireNotNull(call.argument<Number>("size")).toLong(),
                             requireNotNull(call.argument<String>("sha256")),
+                            call.argument<String>("downloadUrl"),
                         )
                         verifiedApk = null
                         active = task

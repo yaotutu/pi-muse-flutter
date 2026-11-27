@@ -19,12 +19,14 @@ class AppRelease {
     required this.assetName,
     required this.size,
     required this.sha256,
+    this.downloadUrl,
   });
 
   final String version;
   final String assetName;
   final int size;
   final String sha256;
+  final String? downloadUrl;
 }
 
 class ReleaseCheckException implements Exception {
@@ -51,7 +53,7 @@ bool isNewerVersion(String candidate, String installed) {
 const latestApkDownloadUrl =
     'https://github.com/$releaseRepository/releases/latest/download/$universalApkName';
 
-AppRelease parseRelease(Object? value, {Abi? abi}) {
+AppRelease parseRelease(Object? value, {Abi? abi, Uri? serverOrigin}) {
   if (value is! Map<String, dynamic>) {
     throw const ReleaseCheckException('发布信息格式不正确');
   }
@@ -85,9 +87,11 @@ AppRelease parseRelease(Object? value, {Abi? abi}) {
   final assetName = asset['name'] as String;
   final size = asset['size'];
   final digest = asset['digest'];
-  final officialUrl =
-      'https://github.com/$releaseRepository/releases/download/$tag/$assetName';
-  if (asset['browser_download_url'] != officialUrl) {
+  final mirrorPath = '/updates/android/apk/$tag/$assetName';
+  final expectedUrl = serverOrigin != null
+      ? mirrorPath
+      : 'https://github.com/$releaseRepository/releases/download/$tag/$assetName';
+  if (asset['browser_download_url'] != expectedUrl) {
     throw const ReleaseCheckException('安装包不属于官方发布地址');
   }
   if (size is! int ||
@@ -102,33 +106,120 @@ AppRelease parseRelease(Object? value, {Abi? abi}) {
     assetName: assetName,
     size: size,
     sha256: digest.substring(7),
+    downloadUrl: serverOrigin
+        ?.replace(path: mirrorPath, query: null, fragment: null)
+        .toString(),
   );
 }
 
-/// 404 表示手机当前无法读取正式发布。其他错误保留重试入口。
-Future<AppRelease?> getLatestRelease(HttpClient client) async {
+/// 已连接 Pi Muse 服务端时优先走同源镜像；未连接服务端时回退直连 GitHub。
+Future<AppRelease?> getLatestRelease(
+  HttpClient client, {
+  Uri? serverOrigin,
+  bool manual = false,
+}) async {
   try {
+    if (serverOrigin != null) {
+      return await _readServerRelease(
+        client,
+        serverOrigin,
+        manual: manual,
+      ).timeout(const Duration(seconds: 20));
+    }
     return await _readLatestRelease(
       client,
     ).timeout(const Duration(seconds: 20));
   } on TimeoutException {
-    throw const ReleaseCheckException('检查更新超时，请稍后重试');
+    throw ReleaseCheckException(
+      serverOrigin != null
+          ? '连接当前服务端检查更新超时，请稍后重试'
+          : '检查更新超时，请稍后重试',
+    );
   } on IOException {
-    throw const ReleaseCheckException('无法连接 GitHub，请稍后重试');
+    throw ReleaseCheckException(
+      serverOrigin != null
+          ? '无法连接当前服务端检查更新，请确认服务在线后重试'
+          : '无法连接 GitHub，请稍后重试',
+    );
   } on FormatException {
     throw const ReleaseCheckException('发布信息格式不正确');
   }
+}
+
+Future<AppRelease?> _readServerRelease(
+  HttpClient client,
+  Uri serverOrigin, {
+  required bool manual,
+}) async {
+  if (manual) {
+    try {
+      final refresh = await client
+          .postUrl(
+            serverOrigin.replace(
+              path: '/updates/android/refresh',
+              query: null,
+              fragment: null,
+            ),
+          )
+          .timeout(const Duration(seconds: 3));
+      refresh.followRedirects = false;
+      final refreshResp =
+          await refresh.close().timeout(const Duration(seconds: 3));
+      await refreshResp.drain<void>();
+    } catch (_) {
+      // 刷新通知失败不阻断读取已镜像的版本清单。
+    }
+  }
+  final request = await client.getUrl(
+    serverOrigin.replace(
+      path: '/updates/android/latest',
+      query: null,
+      fragment: null,
+    ),
+  );
+  request.followRedirects = false;
+  request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+  final response = await request.close();
+  if (response.statusCode == HttpStatus.serviceUnavailable) {
+    await response.drain<void>();
+    throw const ReleaseCheckException('服务端正在同步最新版本安装包，请稍后再点检查更新');
+  }
+  if (response.statusCode != HttpStatus.ok) {
+    await response.drain<void>();
+    throw const ReleaseCheckException('服务端更新渠道暂不可用，请稍后重试');
+  }
+  final decoded = await _readJsonBody(response);
+  return parseRelease(
+    decoded,
+    abi: Abi.current(),
+    serverOrigin: serverOrigin,
+  );
 }
 
 Future<AppRelease?> _readLatestRelease(HttpClient client) async {
   final request = await client.getUrl(Uri.parse(latestReleaseUrl));
   request.followRedirects = false;
   request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
+  request.headers.set(HttpHeaders.userAgentHeader, 'pi-muse-flutter');
   final response = await request.close();
-  if (response.statusCode == HttpStatus.notFound) return null;
+  if (response.statusCode == HttpStatus.notFound) {
+    await response.drain<void>();
+    return null;
+  }
+  if (response.statusCode == HttpStatus.forbidden ||
+      response.statusCode == HttpStatus.tooManyRequests) {
+    await response.drain<void>();
+    throw const ReleaseCheckException('GitHub 接口请求受限，请连接服务端后重试或稍后再试');
+  }
   if (response.statusCode != HttpStatus.ok) {
+    await response.drain<void>();
     throw const ReleaseCheckException('GitHub 更新服务暂不可用');
   }
+  final decoded = await _readJsonBody(response);
+  return parseRelease(decoded, abi: Abi.current());
+}
+
+Future<Object?> _readJsonBody(HttpClientResponse response) async {
   final body = BytesBuilder(copy: false);
   await for (final chunk in response) {
     if (body.length + chunk.length > _maxReleaseBytes) {
@@ -136,8 +227,5 @@ Future<AppRelease?> _readLatestRelease(HttpClient client) async {
     }
     body.add(chunk);
   }
-  return parseRelease(
-    jsonDecode(utf8.decode(body.takeBytes())),
-    abi: Abi.current(),
-  );
+  return jsonDecode(utf8.decode(body.takeBytes()));
 }

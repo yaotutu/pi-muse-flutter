@@ -23,16 +23,34 @@ enum AppUpdateStatus {
   installFailed,
 }
 
+typedef ReleaseLookup =
+    Future<AppRelease?> Function(
+      HttpClient client, {
+      Uri? serverOrigin,
+      bool manual,
+    });
+
 /// 一个任务负责从检查到下载的整个过程。取消后等到网络与原生任务收尾才允许重试。
 class AppUpdateController extends ChangeNotifier {
-  AppUpdateController({this.lookupRelease = getLatestRelease}) {
+  AppUpdateController({
+    Future<AppRelease?> Function(HttpClient)? lookupRelease,
+    ReleaseLookup? lookup,
+    Uri? serverOrigin,
+  }) : _lookup =
+           lookup ??
+           (lookupRelease != null
+               ? (client, {Uri? serverOrigin, bool manual = false}) =>
+                     lookupRelease(client)
+               : getLatestRelease),
+       _serverOrigin = serverOrigin {
     unawaited(_initialize());
   }
 
   static const autoCheckInterval = Duration(hours: 1);
-  final Future<AppRelease?> Function(HttpClient) lookupRelease;
+  final ReleaseLookup _lookup;
 
   AppUpdateStatus _status = AppUpdateStatus.loading;
+  Uri? _serverOrigin;
   String? _currentVersion;
   AppRelease? _release;
   int _bytesWritten = 0;
@@ -70,6 +88,21 @@ class AppUpdateController extends ChangeNotifier {
       }
     } catch (_) {
       if (!_disposed) _publish(AppUpdateStatus.unsupported, '无法读取当前安装版本。');
+    }
+  }
+
+  void setServerOrigin(Uri? origin) {
+    final normalized = origin?.replace(path: '', query: null, fragment: null);
+    if (_disposed || normalized?.toString() == _serverOrigin?.toString()) {
+      return;
+    }
+    _serverOrigin = normalized;
+    _lastCheck = null;
+    if (_foreground &&
+        !_busy &&
+        _status != AppUpdateStatus.loading &&
+        _status != AppUpdateStatus.unsupported) {
+      unawaited(check());
     }
   }
 
@@ -133,7 +166,11 @@ class AppUpdateController extends ChangeNotifier {
         _lookupClient = client;
         final AppRelease? found;
         try {
-          found = await lookupRelease(client);
+          found = await _lookup(
+            client,
+            serverOrigin: _serverOrigin,
+            manual: manual,
+          );
         } finally {
           client.close(force: true);
           _lookupClient = null;
