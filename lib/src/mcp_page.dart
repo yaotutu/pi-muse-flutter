@@ -85,11 +85,11 @@ class _McpPageState extends State<McpPage> {
     }
   }
 
-  Future<void> _toggleGlobalEnabled(McpServer server, bool enabled) =>
-      _runServerAction(
-        server.name,
-        () => _client.patchServer(server.name, enabled: enabled),
-      );
+  Future<void> _enableServer(McpServer server) => _runServerAction(
+    server.name,
+    () => _client.patchServer(server.name, enabled: true),
+    successMessage: '已启用 ${server.name}',
+  );
 
   Future<void> _toggleAssistantEnabled(McpServer server, bool enabled) {
     final overview = _overview;
@@ -113,7 +113,7 @@ class _McpPageState extends State<McpPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('删除「${server.name}」？'),
-        content: const Text('删除后将立即断开连接，并从全局配置与已授权的专职助手中移除。'),
+        content: const Text('删除后将立即断开连接，并从全局列表与已开启该服务的 Subagent 中移除。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -219,7 +219,7 @@ class _McpPageState extends State<McpPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '在此统一管理全局 MCP 服务。已启用的服务对主聊天默认开启（可单独关闭），对专职助手默认关闭（可在「专职助手」按需开启）。',
+                  '这里维护全局 MCP 服务列表。新增服务默认对聊天开启、对 Subagent 关闭；可在此单独控制聊天是否使用，或在「Subagent」中按需开启。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -295,7 +295,7 @@ class _McpPageState extends State<McpPage> {
               server: server,
               assistantServer: overview.assistantServers[server.name],
               busy: _pending.contains(server.name),
-              onToggleGlobal: (value) => _toggleGlobalEnabled(server, value),
+              onEnable: () => _enableServer(server),
               onToggleAssistant: (value) =>
                   _toggleAssistantEnabled(server, value),
               onReconnect: () => _runServerAction(
@@ -318,7 +318,7 @@ class _McpServerCard extends StatelessWidget {
     required this.server,
     required this.assistantServer,
     required this.busy,
-    required this.onToggleGlobal,
+    required this.onEnable,
     required this.onToggleAssistant,
     required this.onReconnect,
     required this.onEdit,
@@ -328,7 +328,7 @@ class _McpServerCard extends StatelessWidget {
   final McpServer server;
   final McpAssistantServer? assistantServer;
   final bool busy;
-  final ValueChanged<bool> onToggleGlobal;
+  final VoidCallback onEnable;
   final ValueChanged<bool> onToggleAssistant;
   final VoidCallback onReconnect;
   final VoidCallback onEdit;
@@ -487,22 +487,13 @@ class _McpServerCard extends StatelessWidget {
           ),
           const Divider(height: 1),
           SwitchListTile(
-            title: const Text('全局启用'),
-            subtitle: Text(
-              server.enabled ? '全局托管开启中，供主聊天或专职助手使用' : '已全局停用，所有助手均不可用',
-            ),
-            value: server.enabled,
-            onChanged: busy ? null : onToggleGlobal,
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          SwitchListTile(
-            title: const Text('主聊天可用'),
+            title: const Text('聊天可用'),
             subtitle: Text(
               !server.enabled
-                  ? '全局停用状态下暂不可用'
+                  ? '服务端配置中已停用'
                   : assistantEnabled
-                  ? '默认对主聊天开启，可随时单独关闭'
-                  : '已在主聊天停用（不影响专职助手按需使用）',
+                  ? '聊天默认开启，可随时关闭'
+                  : '已对聊天关闭，不影响 Subagent 按需开启',
             ),
             value: assistantEnabled,
             onChanged: (!server.enabled || busy) ? null : onToggleAssistant,
@@ -563,11 +554,18 @@ class _McpServerCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 4,
               children: [
-                OutlinedButton.icon(
-                  onPressed: (!server.enabled || busy) ? null : onReconnect,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('重连'),
-                ),
+                if (!server.enabled)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : onEnable,
+                    icon: const Icon(Icons.play_arrow_outlined, size: 18),
+                    label: const Text('启用服务'),
+                  )
+                else
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : onReconnect,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('重连'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: busy ? null : onEdit,
                   icon: const Icon(Icons.edit_outlined, size: 18),
@@ -624,7 +622,6 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
   late final TextEditingController _cwdController;
 
   late McpTransport _transport;
-  late bool _enabled;
   late bool _replaceConnection;
   final List<_KeyValueEntry> _headers = [];
   final List<_KeyValueEntry> _envs = [];
@@ -651,7 +648,6 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
     );
     _cwdController = TextEditingController(text: existing?.cwd ?? '');
     _transport = existing?.transport ?? McpTransport.http;
-    _enabled = existing?.enabled ?? true;
     _replaceConnection = existing == null;
     if (existing != null) {
       for (final key in existing.headerNames) {
@@ -711,7 +707,6 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
       if (existing != null && !_replaceConnection) {
         await widget.client.patchServer(
           existing.name,
-          enabled: _enabled,
           description: description,
           timeout: timeout,
         );
@@ -719,7 +714,7 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
         final name = existing?.name ?? _nameController.text.trim();
         final body = <String, dynamic>{
           'type': _transport == McpTransport.http ? 'http' : 'stdio',
-          'enabled': _enabled,
+          'enabled': true,
           'timeout': timeout,
           if (description.isNotEmpty) 'description': description,
         };
@@ -810,16 +805,6 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
                       },
                     ),
                   const SizedBox(height: 16),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('全局启用'),
-                    subtitle: const Text('保存后立即尝试连接该 MCP 服务'),
-                    value: _enabled,
-                    onChanged: _saving
-                        ? null
-                        : (val) => setState(() => _enabled = val),
-                  ),
-                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _descriptionController,
                     enabled: !_saving,
@@ -853,7 +838,7 @@ class _McpServerEditorPageState extends State<_McpServerEditorPage> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('重新配置连接与凭据参数'),
-                      subtitle: const Text('仅修改说明/超时/启停时保持关闭即可安全保留原密钥'),
+                      subtitle: const Text('仅修改说明或超时时保持关闭即可安全保留原密钥'),
                       value: _replaceConnection,
                       onChanged: _saving
                           ? null

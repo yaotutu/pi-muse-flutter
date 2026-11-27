@@ -222,7 +222,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.smart_toy_outlined),
-                title: const Text('专职助手'),
+                title: const Text('Subagent'),
                 enabled: !_chat.expired,
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _chat.expired

@@ -210,7 +210,7 @@ void main() {
 
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('专职助手'));
+      await tester.tap(find.text('Subagent'));
       await tester.pumpAndSettle();
 
       expect(find.text('短信助手'), findsOneWidget);
@@ -258,7 +258,7 @@ void main() {
       // Open habits -> readonly MCP notice
       await tester.tap(find.text('习惯归纳助手'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('暂不支持绑定外部 MCP 服务'), findsOneWidget);
+      expect(find.textContaining('不支持绑定外部 MCP 服务'), findsOneWidget);
 
       expect(tester.takeException(), isNull);
     },

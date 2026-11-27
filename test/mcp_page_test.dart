@@ -186,15 +186,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('search_docs'), findsOneWidget);
 
-      // Toggle main-chat switch off
-      await tester.tap(find.text('主聊天可用'));
+      // Only the single chat switch should appear on each card
+      expect(find.text('聊天可用'), findsOneWidget);
+      expect(find.text('全局启用'), findsNothing);
+      expect(find.text('主聊天可用'), findsNothing);
+
+      // Toggle chat switch off and back on
+      await tester.tap(find.text('聊天可用'));
       await tester.pumpAndSettle();
       expect(api.overrides['docs'], isFalse);
-
-      // Toggle global switch off
-      await tester.tap(find.text('全局启用'));
+      await tester.tap(find.text('聊天可用'));
       await tester.pumpAndSettle();
-      expect(api.servers['docs']!['enabled'], isFalse);
+      expect(api.overrides['docs'], isTrue);
 
       // Edit description via PATCH (keeping headers intact)
       await tester.tap(find.text('编辑'));
@@ -208,9 +211,7 @@ void main() {
       expect(api.servers['docs']!['description'], 'Updated docs description');
       expect(api.servers['docs']!['headerNames'], ['Authorization']);
 
-      // Re-enable global switch and test reconnect
-      await tester.tap(find.text('全局启用'));
-      await tester.pumpAndSettle();
+      // Reconnect test
       await tester.tap(find.text('重连'));
       await tester.pumpAndSettle();
       expect(
@@ -238,20 +239,20 @@ void main() {
       await tester.scrollUntilVisible(
         find.text('保存配置'),
         200,
-        scrollable: find.byType(Scrollable).last,
+        scrollable: find.descendant(
+          of: find.byType(Form),
+          matching: find.byType(Scrollable),
+        ).first,
       );
+      await tester.ensureVisible(find.text('保存配置'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('保存配置'));
       await tester.pumpAndSettle();
       expect(api.servers.containsKey('local-fs'), isTrue);
       expect(api.servers['local-fs']!['transport'], 'stdio');
 
       // Delete the newly added server
-      await tester.scrollUntilVisible(
-        find.text('local-fs'),
-        200,
-        scrollable: find.byType(Scrollable).last,
-      );
-      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('删除').last);
       await tester.pumpAndSettle();

@@ -344,7 +344,7 @@ String subagentErrorMessage(Object error) {
     if (error.status == 401) return '登录已失效，请重新连接服务器';
     return switch (error.code) {
       'INVALID_INPUT' => '内容格式无效或超出长度限制',
-      'NOT_FOUND' => '专职助手或关联服务不存在',
+      'NOT_FOUND' => 'Subagent 或关联服务不存在',
       'SERVICE_UNAVAILABLE' => '服务暂不可用，请稍后重试',
       _ => switch (error.status) {
         408 => '请求超时，请稍后重试',

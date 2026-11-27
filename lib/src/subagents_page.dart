@@ -82,7 +82,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
     final colors = theme.colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('专职助手'),
+        title: const Text('Subagent'),
         actions: [
           IconButton(
             onPressed: _loading ? null : () => _reload(showSpinner: false),
@@ -144,7 +144,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '查看系统内置的专职助手能力、系统提示词，编辑关联领域指令，并为支持对话路由的助手按需授权外部 MCP 服务。',
+                  '查看系统内置的 Subagent 能力与系统提示词，编辑关联领域指令，并为支持对话路由的 Subagent 按需开启 MCP 服务。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -504,7 +504,7 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
               if (summary.routingHint != null) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '主聊天路由说明',
+                  '路由说明',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -549,8 +549,8 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
                     const SizedBox(height: 6),
                     Text(
                       selection.editable
-                          ? '默认对所有专职助手关闭。仅开启此处列表中的服务后，该助手才可在聊天任务中使用对应 MCP 工具。'
-                          : '该助手仅在后台执行固定结构化任务，暂不支持绑定外部 MCP 服务。',
+                          ? '读取全局 MCP 列表，默认全部关闭。开启后，该 Subagent 在处理对话任务时即可调用对应服务。'
+                          : '该 Subagent 仅在后台执行固定结构化任务，不支持绑定外部 MCP 服务。',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -562,7 +562,7 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                   child: Text(
-                    '暂无全局 MCP 服务，请先在「设置 → MCP 服务」中添加。',
+                    '暂无 MCP 服务，请先在「设置 → MCP 服务」中添加。',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -576,7 +576,7 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
                     subtitle: Text(
                       [
                         '${server.transport.label} · ${server.status.label} · ${server.toolCount} 个工具',
-                        if (!server.globalEnabled) '全局已停用（需在 MCP 服务总开关启用后生效）',
+                        if (!server.globalEnabled) '服务端配置中已停用',
                         if (server.description.isNotEmpty) server.description,
                       ].join('\n'),
                     ),
