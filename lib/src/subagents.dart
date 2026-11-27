@@ -150,6 +150,7 @@ class SubagentSummary {
     required this.hasUserInstructions,
     required this.tools,
     required this.mcp,
+    required this.enabledEditable,
     required this.mcpEditable,
     required this.userInstructionsEditable,
   });
@@ -164,6 +165,7 @@ class SubagentSummary {
   final bool hasUserInstructions;
   final List<SubagentToolSpec> tools;
   final List<SubagentMcpBinding> mcp;
+  final bool enabledEditable;
   final bool mcpEditable;
   final bool userInstructionsEditable;
 
@@ -193,6 +195,7 @@ class SubagentSummary {
           .cast<Json>()
           .map(SubagentMcpBinding.fromJson)
           .toList(growable: false),
+      enabledEditable: editability['enabled'] != 'readonly',
       mcpEditable: editability['mcp'] == 'editable',
       userInstructionsEditable: editability['userInstructions'] == 'editable',
     );
@@ -300,6 +303,14 @@ class SubagentsClient {
 
   Future<SubagentDetail> getDetail(String id) async {
     final result = await _api.get('/api/subagents/${Uri.encodeComponent(id)}');
+    return SubagentDetail.fromJson(result);
+  }
+
+  Future<SubagentDetail> setEnabled(String id, bool enabled) async {
+    final result = await _api.patch(
+      '/api/subagents/${Uri.encodeComponent(id)}',
+      {'enabled': enabled},
+    );
     return SubagentDetail.fromJson(result);
   }
 

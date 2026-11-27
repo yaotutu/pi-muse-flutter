@@ -2,12 +2,19 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'api.dart';
 import 'sms_history_section.dart';
 import 'sms_sync.dart';
+import 'subagents.dart';
 
 class SmsSyncPage extends StatefulWidget {
-  const SmsSyncPage({super.key, required this.connectionUsesHttp});
+  const SmsSyncPage({
+    super.key,
+    this.api,
+    required this.connectionUsesHttp,
+  });
 
+  final MuseApi? api;
   final bool connectionUsesHttp;
 
   @override
@@ -98,6 +105,29 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     }
     await _run(() async {
       await SmsSync.setEnabled(enabled);
+      if (enabled && widget.api != null) {
+        await SubagentsClient(widget.api!).setEnabled('sms', true).catchError((Object _) async {
+          return SubagentDetail(
+            summary: const SubagentSummary(
+              id: 'sms',
+              name: '',
+              description: '',
+              routingHint: null,
+              triggers: [],
+              enabled: true,
+              parallelAllowed: true,
+              hasUserInstructions: false,
+              tools: [],
+              mcp: [],
+              enabledEditable: true,
+              mcpEditable: true,
+              userInstructionsEditable: false,
+            ),
+            prompts: const [],
+            userInstructions: null,
+          );
+        });
+      }
     });
   }
 
@@ -170,7 +200,6 @@ class _SmsSyncPageState extends State<SmsSyncPage> with WidgetsBindingObserver {
     final actionRequired = switch (block) {
       'auth' => '连接已失效，请在设置中重新连接服务器。',
       'connection' => '无法读取服务器连接，请在设置中重新连接。',
-      'disabled' => '短信已保存在本机。服务器的信息后台已关闭，开启后点「立即同步」。',
       'paused' => '短信已保存在本机。服务器恢复接收后点「立即同步」。',
       'local_error' => '本机短信同步遇到错误，请重试。',
       _ => null,

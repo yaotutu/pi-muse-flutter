@@ -19,7 +19,7 @@ internal object SmsSync {
     private const val lastSuccessKey = "last_success"
     private const val installationKey = "installation"
     private val connectionStatuses = setOf("auth", "connection")
-    private val serverStatuses = setOf("disabled", "paused")
+    private val serverStatuses = setOf("paused")
     private val blockedStatuses = connectionStatuses + serverStatuses
     private var database: SmsOutbox? = null
     private var generation = 0L

@@ -61,7 +61,7 @@ class SmsUploadWorker(context: Context, parameters: WorkerParameters) : Worker(c
                     when (result) {
                         IntakeResult.ACCEPTED -> SmsSync.accepted(context, epoch, id)
                         IntakeResult.CONFLICT, IntakeResult.INVALID -> SmsSync.mark(context, epoch, id, SmsRowState.FAILED)
-                        IntakeResult.AUTH, IntakeResult.DISABLED, IntakeResult.PAUSED -> {
+                        IntakeResult.AUTH, IntakeResult.PAUSED -> {
                             // 已明确拒收，恢复排队状态，等待连接更新或手动重试。
                             SmsSync.mark(context, epoch, id, SmsRowState.QUEUED)
                             SmsSync.report(context, epoch, result.name.lowercase())

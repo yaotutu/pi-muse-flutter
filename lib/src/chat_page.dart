@@ -241,6 +241,7 @@ class _ChatPageState extends State<ChatPage> {
                   onTap: () => Navigator.of(context).push<void>(
                     MaterialPageRoute(
                       builder: (_) => SmsSyncPage(
+                        api: _chat.api,
                         connectionUsesHttp: widget.connectionUsesHttp,
                       ),
                     ),

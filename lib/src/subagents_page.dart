@@ -23,6 +23,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
   List<SubagentSummary>? _subagents;
   Object? _error;
   bool _loading = true;
+  final Set<String> _toggling = {};
 
   @override
   void initState() {
@@ -73,6 +74,34 @@ class _SubagentsPageState extends State<SubagentsPage> {
     );
     if (mounted) {
       await _reload(showSpinner: false);
+    }
+  }
+
+  Future<void> _toggleEnabled(SubagentSummary agent, bool enabled) async {
+    if (_toggling.contains(agent.id)) return;
+    setState(() => _toggling.add(agent.id));
+    try {
+      final updated = await _client.setEnabled(agent.id, enabled);
+      if (!mounted) return;
+      setState(() {
+        final current = _subagents;
+        if (current != null) {
+          _subagents = [
+            for (final item in current)
+              if (item.id == agent.id) updated.summary else item,
+          ];
+        }
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(subagentErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _toggling.remove(agent.id));
+      }
     }
   }
 
@@ -174,14 +203,13 @@ class _SubagentsPageState extends State<SubagentsPage> {
                               ),
                             ),
                           ),
-                          _Pill(
-                            label: agent.enabled ? '已启用' : '未启用',
-                            background: agent.enabled
-                                ? colors.primaryContainer
-                                : colors.surfaceContainerHighest,
-                            foreground: agent.enabled
-                                ? colors.onPrimaryContainer
-                                : colors.onSurfaceVariant,
+                          Switch(
+                            value: agent.enabled,
+                            onChanged:
+                                (!agent.enabledEditable ||
+                                    _toggling.contains(agent.id))
+                                ? null
+                                : (val) => _toggleEnabled(agent, val),
                           ),
                         ],
                       ),
@@ -270,6 +298,7 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
   SubagentMcpSelection? _mcpSelection;
   Object? _error;
   bool _loading = true;
+  bool _savingEnabled = false;
   bool _savingMcp = false;
   bool _savingInstructions = false;
   bool _instructionsDirty = false;
@@ -332,6 +361,23 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleEnabled(bool enabled) async {
+    if (_savingEnabled || _detail == null) return;
+    setState(() => _savingEnabled = true);
+    try {
+      final updated = await _client.setEnabled(widget.summary.id, enabled);
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _savingEnabled = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingEnabled = false);
+      _showMessage(subagentErrorMessage(error));
+    }
   }
 
   Future<void> _toggleMcpServer(String serverName, bool enabled) async {
@@ -463,20 +509,27 @@ class _SubagentDetailPageState extends State<SubagentDetailPage> {
               Text('概览与运行策略', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(summary.description, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('启用'),
+                subtitle: Text(
+                  !summary.enabledEditable
+                      ? '当前未配置底层能力，暂不可开启'
+                      : summary.enabled
+                      ? '已开启，可正常响应对话路由与后台任务'
+                      : '已关闭，暂不参与对话路由或后台任务',
+                ),
+                value: summary.enabled,
+                onChanged: (!summary.enabledEditable || _savingEnabled)
+                    ? null
+                    : _toggleEnabled,
+              ),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  _Pill(
-                    label: summary.enabled ? '已启用' : '未启用',
-                    background: summary.enabled
-                        ? colors.primaryContainer
-                        : colors.surfaceContainerHighest,
-                    foreground: summary.enabled
-                        ? colors.onPrimaryContainer
-                        : colors.onSurfaceVariant,
-                  ),
                   if (summary.supportsChat)
                     _Pill(
                       label: '支持聊天路由',

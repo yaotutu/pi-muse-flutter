@@ -8,6 +8,8 @@ import 'package:pi_muse_flutter/src/chat_page.dart';
 class _FakeSubagentsApi extends MuseApi {
   _FakeSubagentsApi() : super(Uri.parse('http://127.0.0.1'));
 
+  bool smsEnabled = false;
+  bool habitsEnabled = true;
   String smsInstructions = 'Important verification codes only';
   final smsMcp = <String>[];
   String? savedSmsInstructions;
@@ -19,7 +21,7 @@ class _FakeSubagentsApi extends MuseApi {
     'description': '处理短信筛选与规则管理',
     'routingHint': 'Route SMS questions to sms.',
     'triggers': ['chat', 'background'],
-    'enabled': true,
+    'enabled': smsEnabled,
     'executionPolicy': {'stateless': true, 'parallelAllowed': true},
     'hasUserInstructions': true,
     'capabilities': {
@@ -37,6 +39,7 @@ class _FakeSubagentsApi extends MuseApi {
       ],
     },
     'editability': {
+      'enabled': 'editable',
       'systemPrompts': 'readonly',
       'userInstructions': 'editable',
       'tools': 'readonly',
@@ -51,7 +54,7 @@ class _FakeSubagentsApi extends MuseApi {
     'description': '后台定期归纳长期习惯',
     'routingHint': null,
     'triggers': ['background'],
-    'enabled': true,
+    'enabled': habitsEnabled,
     'executionPolicy': {'stateless': true, 'parallelAllowed': true},
     'hasUserInstructions': false,
     'capabilities': {
@@ -66,6 +69,7 @@ class _FakeSubagentsApi extends MuseApi {
       'mcp': <Json>[],
     },
     'editability': {
+      'enabled': 'editable',
       'systemPrompts': 'readonly',
       'userInstructions': 'none',
       'tools': 'readonly',
@@ -182,6 +186,19 @@ class _FakeSubagentsApi extends MuseApi {
     }
     throw UnimplementedError('Unexpected PUT $path');
   }
+
+  @override
+  Future<Json> patch(String path, Json body) async {
+    if (path == '/api/subagents/sms') {
+      smsEnabled = body['enabled'] == true;
+      return await get('/api/subagents/sms');
+    }
+    if (path == '/api/subagents/habits') {
+      habitsEnabled = body['enabled'] == true;
+      return await get('/api/subagents/habits');
+    }
+    throw UnimplementedError('Unexpected PATCH $path');
+  }
 }
 
 void main() {
@@ -216,9 +233,16 @@ void main() {
       expect(find.text('短信助手'), findsOneWidget);
       expect(find.text('习惯归纳助手'), findsOneWidget);
 
+      // Toggle sms switch directly on list card
+      expect(api.smsEnabled, isFalse);
+      await tester.tap(find.byType(Switch).first);
+      await tester.pumpAndSettle();
+      expect(api.smsEnabled, isTrue);
+
       // Open sms detail
       await tester.tap(find.text('短信助手'));
       await tester.pumpAndSettle();
+      expect(find.text('启用'), findsOneWidget);
 
       // Enable docs MCP for sms
       await tester.tap(find.text('docs'));

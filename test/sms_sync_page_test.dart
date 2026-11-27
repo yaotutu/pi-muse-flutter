@@ -3,7 +3,40 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:pi_muse_flutter/src/api.dart';
 import 'package:pi_muse_flutter/src/sms_sync_page.dart';
+
+class _FakeSmsSubagentApi extends MuseApi {
+  _FakeSmsSubagentApi() : super(Uri.parse('http://127.0.0.1'));
+
+  final patches = <(String, Json)>[];
+
+  @override
+  Future<Json> patch(String path, Json body) async {
+    patches.add((path, body));
+    return {
+      'id': 'sms',
+      'name': '短信助手',
+      'description': '短信',
+      'routingHint': null,
+      'triggers': ['chat', 'background'],
+      'enabled': body['enabled'] == true,
+      'executionPolicy': {'stateless': true, 'parallelAllowed': true},
+      'hasUserInstructions': true,
+      'capabilities': {'tools': <Json>[], 'skills': <Json>[], 'mcp': <Json>[]},
+      'editability': {
+        'enabled': 'editable',
+        'systemPrompts': 'readonly',
+        'userInstructions': 'editable',
+        'tools': 'readonly',
+        'skills': 'readonly',
+        'mcp': 'editable',
+      },
+      'prompts': <Json>[],
+      'userInstructions': null,
+    };
+  }
+}
 
 const _historyIdle = {
   'permission': false,
@@ -26,6 +59,7 @@ void main() {
     tester,
   ) async {
     var enableCalls = 0;
+    final fakeApi = _FakeSmsSubagentApi();
     var settingsCalls = 0;
     var permission = false;
     var enabled = false;
@@ -50,7 +84,9 @@ void main() {
       return {'enabled': enabled, 'permission': permission, 'pending': 0};
     });
     await tester.pumpWidget(
-      const MaterialApp(home: SmsSyncPage(connectionUsesHttp: true)),
+      MaterialApp(
+        home: SmsSyncPage(api: fakeApi, connectionUsesHttp: true),
+      ),
     );
     await tester.pumpAndSettle();
     final toggle = find.byType(SwitchListTile);
@@ -93,6 +129,9 @@ void main() {
     await tester.tap(find.text('继续'));
     await tester.pumpAndSettle();
     expect(enableCalls, 2);
+    expect(fakeApi.patches.length, 2);
+    expect(fakeApi.patches.last.$1, '/api/subagents/sms');
+    expect(fakeApi.patches.last.$2['enabled'], isTrue);
     expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
     expect(find.text('仅同步开启后收到的新短信'), findsOneWidget);
     expect(find.textContaining('正在等待新短信'), findsOneWidget);
@@ -109,7 +148,7 @@ void main() {
   testWidgets('shows queued count and supports retry after server rejection', (
     tester,
   ) async {
-    var block = 'disabled';
+    var block = 'paused';
     var retryCalls = 0;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'historyStatus') return _historyIdle;
@@ -130,12 +169,6 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: SmsSyncPage(connectionUsesHttp: false)),
     );
-    await tester.pumpAndSettle();
-    expect(find.text('待同步 2 条'), findsOneWidget);
-    expect(find.textContaining('服务器的信息后台已关闭'), findsOneWidget);
-    expect(find.textContaining('短信已保存在本机'), findsOneWidget);
-    block = 'paused';
-    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.text('待同步 2 条'), findsOneWidget);
     expect(find.textContaining('短信已保存在本机'), findsOneWidget);

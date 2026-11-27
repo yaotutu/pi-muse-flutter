@@ -50,7 +50,6 @@ class SmsIntakeTest {
         }
         for ((code, error, expected) in listOf(
             Triple(401, "UNAUTHORIZED", IntakeResult.AUTH),
-            Triple(409, "DISABLED", IntakeResult.DISABLED),
             Triple(409, "SESSION_PAUSED", IntakeResult.PAUSED),
             Triple(409, "CONFLICT", IntakeResult.CONFLICT),
             Triple(400, "INVALID_REQUEST", IntakeResult.INVALID),

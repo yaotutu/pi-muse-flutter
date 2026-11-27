@@ -22,7 +22,7 @@ import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-internal enum class IntakeResult { ACCEPTED, CONFLICT, INVALID, ABSENT, AUTH, DISABLED, PAUSED, UNKNOWN }
+internal enum class IntakeResult { ACCEPTED, CONFLICT, INVALID, ABSENT, AUTH, PAUSED, UNKNOWN }
 
 internal class SmsIntake(origin: HttpUrl, private val token: String) {
     private val endpoint = origin.newBuilder().encodedPath("/api/information/items").build()
@@ -118,7 +118,6 @@ internal class SmsIntake(origin: HttpUrl, private val token: String) {
                     else -> IntakeResult.UNKNOWN
                 }
                 409 -> when (data.optString("code")) {
-                    "DISABLED" -> IntakeResult.DISABLED
                     "SESSION_PAUSED" -> IntakeResult.PAUSED
                     "CONFLICT" -> IntakeResult.CONFLICT
                     else -> IntakeResult.UNKNOWN
