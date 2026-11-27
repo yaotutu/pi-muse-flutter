@@ -8,7 +8,7 @@
 
 ### 查看执行详情
 
-当助手正在处理请求时，聊天输入框上方会紧凑展示最新一条正在进行的动作；正常完成后自动收起，保持聊天区域简洁（纯文本问答或失败/中断提示除外）。点该提示或聊天右上角的「执行详情」，可切换到两个独立标签页：**执行记录**以连续时间轴直接呈现当前会话的全部操作动作与脱敏摘要（不再套外层总任务卡片），关联待审批的节点可直接跳到审批页；**审批**作为独立板块集中展示待处理的修改确认（默认 24 小时审批窗口，批准后原任务原地继续）和历史审批记录，历史预览会同时显示审批结果与实际执行回执。返回键回到聊天，草稿和正在生成的回复会保留。
+当助手正在处理请求时，聊天输入框上方会紧凑展示最新一条正在进行的动作；正常完成后自动收起，保持聊天区域简洁（纯文本问答或失败/中断提示除外）。点该提示或聊天右上角的「执行详情」，可切换到两个独立标签页：**执行记录**以连续时间轴直接呈现当前会话的全部操作动作与脱敏摘要（不再套外层总任务卡片或重复显示会话标题），并在任务切换处标出轻量来源标记，关联待审批的节点可直接跳到审批页；**审批**作为独立板块集中展示待处理的修改确认（默认 24 小时审批窗口，批准后原任务原地继续）和历史审批记录，历史预览会同时显示审批结果与实际执行回执。返回键回到聊天，草稿和正在生成的回复会保留。
 
 ### 操作消息
 
@@ -93,7 +93,7 @@ Open the drawer with the top-left menu button to switch sessions or tap **新建
 
 ### View execution details
 
-While a run is active, a compact single-line live bar above the composer shows only the latest active action and clears automatically when the reply completes normally; tap it or tap **执行详情** (Execution details) in the top right of chat to open the two-tab panel: **执行记录** (Execution records) presents all concrete steps across the current conversation directly on a flat chronological timeline (without outer parent-task cards), with approval steps linking directly to approval details; **审批** (Approvals) stays dedicated to pending confirmations (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and execution receipt. Use Back to return to the conversation with the draft and any in-progress reply intact.
+While a run is active, a compact single-line live bar above the composer shows only the latest active action and clears automatically when the reply completes normally; tap it or tap **执行详情** (Execution details) in the top right of chat to open the two-tab panel: **执行记录** (Execution records) presents all concrete steps across the current conversation directly on a flat chronological timeline (without outer parent-task cards or repeating the session title below the tabs), marking transitions between parent tasks with a lightweight source label and linking approval steps directly to approval details; **审批** (Approvals) stays dedicated to pending confirmations (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and execution receipt. Use Back to return to the conversation with the draft and any in-progress reply intact.
 
 ### Message actions
 

@@ -10,13 +10,11 @@ class ExecutionDetailsPage extends StatefulWidget {
     super.key,
     required this.chat,
     required this.sessionId,
-    required this.title,
     required this.openApproval,
   });
 
   final ChatController chat;
   final String sessionId;
-  final String title;
   final void Function(BuildContext, String, Approval?) openApproval;
 
   @override
@@ -62,33 +60,16 @@ class _ExecutionDetailsPageState extends State<ExecutionDetailsPage>
     ),
     body: SafeArea(
       top: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: TabBarView(
+        controller: _tabs,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: Text(
-              widget.title,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+          _RunHistoryTab(
+            chat: widget.chat,
+            sessionId: widget.sessionId,
+            onOpenPendingTab: () => _tabs.animateTo(1),
+            onOpenApproval: _openApprovalById,
           ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _RunHistoryTab(
-                  chat: widget.chat,
-                  sessionId: widget.sessionId,
-                  onOpenPendingTab: () => _tabs.animateTo(1),
-                  onOpenApproval: _openApprovalById,
-                ),
-                if (_visited.contains(1))
-                  _buildApprovals()
-                else
-                  const SizedBox(),
-              ],
-            ),
-          ),
+          if (_visited.contains(1)) _buildApprovals() else const SizedBox(),
         ],
       ),
     ),
@@ -387,13 +368,10 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                     ),
                   ),
                 ),
-                for (var i = 0; i < group.entries.length; i++)
-                  _TimelineItemRow(
-                    entry: group.entries[i],
-                    isFirst: i == 0,
-                    isLast: i == group.entries.length - 1,
-                    onOpenApproval: widget.onOpenApproval,
-                  ),
+                ..._buildDayTimelineWidgets(
+                  group.entries,
+                  onOpenApproval: widget.onOpenApproval,
+                ),
               ],
               if (_failed && timeline.isNotEmpty)
                 TextButton(
@@ -414,9 +392,49 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
     );
   }
 
+  List<Widget> _buildDayTimelineWidgets(
+    List<_TimelineEntry> entries, {
+    required ValueChanged<String> onOpenApproval,
+  }) {
+    final rows = <_TimelineDayRow>[];
+    String? prevTaskKey;
+    for (final entry in entries) {
+      final taskTitle = entry.taskTitle;
+      final taskKey = taskTitle != null ? (entry.runId ?? taskTitle) : null;
+      if (taskTitle != null && taskKey != prevTaskKey) {
+        rows.add(
+          _TimelineTaskRow(taskTitle: taskTitle, taskSource: entry.taskSource),
+        );
+      }
+      prevTaskKey = taskKey;
+      rows.add(_TimelineStepRow(entry: entry));
+    }
+    return [
+      for (var i = 0; i < rows.length; i++)
+        switch (rows[i]) {
+          _TimelineTaskRow(:final taskTitle, :final taskSource) =>
+            _TimelineTaskMarkerRow(
+              taskTitle: taskTitle,
+              taskSource: taskSource,
+              isFirst: i == 0,
+              isLast: i == rows.length - 1,
+            ),
+          _TimelineStepRow(:final entry) => _TimelineItemRow(
+            entry: entry,
+            isFirst: i == 0,
+            isLast: i == rows.length - 1,
+            onOpenApproval: onOpenApproval,
+          ),
+        },
+    ];
+  }
+
   List<_TimelineEntry> _buildTimelineEntries(List<Json> runs) {
     final entries = <_TimelineEntry>[];
     for (final run in runs) {
+      final runId = _displayText(run['runId']);
+      final taskSource = _displayText(run['source']);
+      final taskTitle = _runTaskTitle(run);
       final runStartedAt = _displayText(run['startedAt']);
       final runEndedAt = _displayText(run['endedAt']);
       final steps = widget.chat.stepsOf(run);
@@ -465,6 +483,9 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
               result: result,
               approvalId: approvalId,
               timestamp: timestamp,
+              runId: runId,
+              taskTitle: taskTitle,
+              taskSource: taskSource,
             ),
           );
         }
@@ -484,6 +505,9 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                   _displayText(agent['endedAt']) ??
                   _displayText(agent['startedAt']) ??
                   runStartedAt,
+              runId: runId,
+              taskTitle: taskTitle,
+              taskSource: taskSource,
             ),
           );
         }
@@ -494,18 +518,18 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
               title: _displayText(tool['label']) ?? '工具',
               status: _displayText(tool['status']) ?? 'running',
               timestamp: runStartedAt,
+              runId: runId,
+              taskTitle: taskTitle,
+              taskSource: taskSource,
             ),
           );
         }
         continue;
       }
-      final rawTitle = _displayText(run['title']);
-      final title = (rawTitle != null && rawTitle != '正在处理请求')
-          ? rawTitle
-          : (run['source'] == 'job' ? '定时任务' : '执行记录');
+      final title = taskTitle ?? (taskSource == 'job' ? '定时任务' : '执行记录');
       entries.add(
         _TimelineEntry(
-          kind: run['source'] == 'job' ? 'job' : 'run',
+          kind: taskSource == 'job' ? 'job' : 'run',
           title: title,
           status: _displayText(run['status']) ?? 'failed',
           result: _displayText(run['label']),
@@ -672,6 +696,23 @@ class _ApprovalHistoryListState extends State<_ApprovalHistoryList>
   }
 }
 
+sealed class _TimelineDayRow {
+  const _TimelineDayRow();
+}
+
+final class _TimelineTaskRow extends _TimelineDayRow {
+  const _TimelineTaskRow({required this.taskTitle, this.taskSource});
+
+  final String taskTitle;
+  final String? taskSource;
+}
+
+final class _TimelineStepRow extends _TimelineDayRow {
+  const _TimelineStepRow({required this.entry});
+
+  final _TimelineEntry entry;
+}
+
 class _TimelineEntry {
   const _TimelineEntry({
     required this.kind,
@@ -682,6 +723,9 @@ class _TimelineEntry {
     this.result,
     this.approvalId,
     this.timestamp,
+    this.runId,
+    this.taskTitle,
+    this.taskSource,
   });
 
   final String kind;
@@ -692,6 +736,9 @@ class _TimelineEntry {
   final String? result;
   final String? approvalId;
   final String? timestamp;
+  final String? runId;
+  final String? taskTitle;
+  final String? taskSource;
 
   _TimelineEntry copyWith({
     String? status,
@@ -707,7 +754,111 @@ class _TimelineEntry {
     result: result ?? this.result,
     approvalId: approvalId ?? this.approvalId,
     timestamp: timestamp ?? this.timestamp,
+    runId: runId,
+    taskTitle: taskTitle,
+    taskSource: taskSource,
   );
+}
+
+class _TimelineTaskMarkerRow extends StatelessWidget {
+  const _TimelineTaskMarkerRow({
+    required this.taskTitle,
+    this.taskSource,
+    required this.isFirst,
+    required this.isLast,
+  });
+
+  final String taskTitle;
+  final String? taskSource;
+  final bool isFirst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final label = taskSource == 'job'
+        ? (taskTitle == '定时任务' ? '定时任务' : '定时任务 · $taskTitle')
+        : '任务 · $taskTitle';
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                Container(
+                  width: 1.5,
+                  height: isFirst ? 10 : 14,
+                  color: isFirst ? Colors.transparent : colors.outlineVariant,
+                ),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors.primary.withValues(alpha: 0.45),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    color: isLast ? Colors.transparent : colors.outlineVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(4, isFirst ? 0 : 6, 4, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest.withValues(
+                      alpha: 0.7,
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        taskSource == 'job'
+                            ? Icons.schedule_outlined
+                            : Icons.chat_bubble_outline_rounded,
+                        size: 13,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TimelineItemRow extends StatelessWidget {
@@ -848,6 +999,13 @@ class _TimelineItemRow extends StatelessWidget {
 
 String? _displayText(Object? value) =>
     value is String && value.isNotEmpty ? value : null;
+
+String? _runTaskTitle(Json run) {
+  final raw = _displayText(run['title'])?.trim();
+  if (raw != null && raw.isNotEmpty && raw != '正在处理请求') return raw;
+  if (run['source'] == 'job') return '定时任务';
+  return null;
+}
 
 String _timelineDayLabel(Object? raw) {
   if (raw is! String || raw.isEmpty) return '较早记录';

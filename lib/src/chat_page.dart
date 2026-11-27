@@ -290,14 +290,13 @@ class _ChatPageState extends State<ChatPage> {
     ),
   );
 
-  void _openExecutionDetails(String sessionId, String title) {
+  void _openExecutionDetails(String sessionId) {
     _focus.unfocus();
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => ExecutionDetailsPage(
           chat: _chat,
           sessionId: sessionId,
-          title: title,
           openApproval: (context, id, pending) =>
               _showApproval(context, sessionId, id, pending),
         ),
@@ -394,7 +393,7 @@ class _ChatPageState extends State<ChatPage> {
               run: remoteRun,
               steps: _chat.stepsOf(remoteRun),
               onOpenDetails: () =>
-                  _openExecutionDetails(conversation.id, title),
+                  _openExecutionDetails(conversation.id),
             )
           else if (terminalNoticeStatus != null)
             _TerminalRunNotice(
@@ -442,7 +441,7 @@ class _ChatPageState extends State<ChatPage> {
                   child: IconButton(
                     tooltip: '执行详情',
                     onPressed: () =>
-                        _openExecutionDetails(conversation.id, title),
+                        _openExecutionDetails(conversation.id),
                     icon: Badge(
                       isLabelVisible: hasApproval,
                       child: const Icon(Icons.monitor_heart_outlined),

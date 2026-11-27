@@ -285,15 +285,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('执行记录'), findsOneWidget);
       expect(find.text('审批'), findsOneWidget);
+      expect(find.text('默认会话'), findsNothing);
       expect(find.text('动态'), findsNothing);
       expect(find.text('历史'), findsNothing);
       expect(find.text('读取资料'), findsOneWidget);
+      expect(find.text('任务 · 第一轮调研'), findsOneWidget);
       expect(find.text('搜索网页 · pi muse'), findsOneWidget);
       expect(find.text('第一轮调研'), findsNothing);
       expect(find.text('其他会话运行'), findsNothing);
       await tester.tap(find.text('加载更多'));
       await tester.pumpAndSettle();
       expect(api.runCursors.take(2).toList(), [null, 'opaque-cursor']);
+      expect(find.text('任务 · 第二轮读取'), findsOneWidget);
       expect(find.text('读取测试文件 · test.txt'), findsOneWidget);
       expect(find.text('第二轮读取'), findsNothing);
       await tester.tap(find.text('审批'));
@@ -1649,6 +1652,32 @@ void main() {
               },
             ],
           },
+          {
+            'sessionId': mainSession,
+            'runId': 'job-run',
+            'revision': 4,
+            'source': 'job',
+            'status': 'succeeded',
+            'title': '每日新闻巡检',
+            'label': '已完成',
+            'startedAt': '2026-11-26T09:15:00.000Z',
+            'endedAt': '2026-11-26T09:15:05.000Z',
+            'steps': [
+              {
+                'id': 'j1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '抓取订阅源',
+                'detail': 'RSS 3 条',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'rss',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:15:00.000Z',
+                'endedAt': '2026-11-26T09:15:05.000Z',
+              },
+            ],
+          },
         ],
       );
       final chat = ChatController(api, () => api);
@@ -1669,19 +1698,21 @@ void main() {
           home: ExecutionDetailsPage(
             chat: chat,
             sessionId: mainSession,
-            title: '默认会话',
             openApproval: (_, _, _) {},
           ),
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('默认会话'), findsNothing);
       expect(find.text('1+1等于几'), findsNothing);
       expect(find.text('正在处理请求'), findsNothing);
-      expect(find.text('查一下北京天气并记草稿'), findsNothing);
+      expect(find.text('任务 · 查一下北京天气并记草稿'), findsOneWidget);
       expect(find.text('搜索网页 · 北京天气'), findsOneWidget);
       expect(find.text('写入文件 · shared/weather.md'), findsOneWidget);
       expect(find.text('已拒绝 · 未批准，未写入文件'), findsOneWidget);
       expect(find.text('文件提交 · shared/weather.md'), findsNothing);
+      expect(find.text('定时任务 · 每日新闻巡检'), findsOneWidget);
+      expect(find.text('抓取订阅源 · RSS 3 条'), findsOneWidget);
 
       // Empty runs show helpful explanation instead of a blank tile.
       api.runs = <Json>[];
@@ -1691,7 +1722,6 @@ void main() {
             key: const ValueKey('empty-page'),
             chat: chat,
             sessionId: 'empty-session',
-            title: '空白会话',
             openApproval: (_, _, _) {},
           ),
         ),
