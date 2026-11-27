@@ -24,11 +24,23 @@
 
 ### 设置
 
-底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。在竖屏或窄窗口时，底栏保留并可直接切回「聊天」，点「外观」「服务器连接」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页；在横屏大屏（例如平板横屏）下，导航自动切换到屏幕右侧竖排，释放纵向空间，左侧会话列表支持一键常驻或收起，「设置」也会切换为左目录、右详情的双栏视图。
+底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。在竖屏或窄窗口时，底栏保留并可直接切回「聊天」，点「外观」「服务器连接」「MCP 服务」「Subagent」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页；在横屏大屏（例如平板横屏）下，导航自动切换到屏幕右侧竖排，释放纵向空间，左侧会话列表支持一键常驻或收起，「设置」全部子项也会统一以左目录、右详情的双栏视图展示。
 
 ### 外观与主题
 
 打开「设置 → 外观」，可以在「主题模式」中开关「跟随系统自动切换」。默认跟随系统自动切换浅色和深色；关闭后可手动固定为「浅色」或「深色」。下方可在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的外观设置。设置仅保存在本机。
+
+### 服务器连接
+
+首次尚未连接服务端时，应用显示居中的欢迎登录页。连接成功后，可随时在「设置 → 服务器连接」中以统一卡片样式查看或修改服务器地址与访问密钥；仅在真正点击「保存并连接」且本机存在进行中回复或未发送草稿时，才会弹窗提示确认。
+
+### MCP 服务
+
+打开「设置 → MCP 服务」，可以集中管理外部 MCP 服务器（新增、编辑、重连、删除）并控制主聊天的「聊天可用」开关。各 Subagent 对 MCP 服务的按需选用在「设置 → Subagent」中单独勾选。
+
+### Subagent
+
+打开「设置 → Subagent」，可以统一查看服务端全部专职 Subagent，在列表或详情页直接切换启用开关，并检视内置系统提示词、工具清单、编辑专属规则（`AGENTS.md`）以及按需勾选该 Subagent 可用的 MCP 服务。短信助手默认关闭，开启「同步新短信」或向服务端上传短信时会自动开启。
 
 ### 同步新短信
 
@@ -109,11 +121,23 @@ In the drawer, open **更多操作** (More actions) next to a topic session to r
 
 ### Settings
 
-Open **设置** (Settings) from the bottom bar or the chat drawer. In portrait or narrow windows, you can use the bottom bar to switch back to **聊天** (Chat) and open **外观** (Appearance), **服务器连接** (Server connection), **短信同步** (SMS sync), or **应用更新** (App updates) from the list. In landscape wide-screen layouts such as tablets, navigation moves to a vertical rail on the right to free vertical space, the session list becomes a collapsible left sidebar, and **设置** renders as a master-detail split pane.
+Open **设置** (Settings) from the bottom bar or the chat drawer. In portrait or narrow windows, you can use the bottom bar to switch back to **聊天** (Chat) and open **外观** (Appearance), **服务器连接** (Server connection), **MCP 服务** (MCP servers), **Subagent**, **短信同步** (SMS sync), or **应用更新** (App updates) from the list. In landscape wide-screen layouts such as tablets, navigation moves to a vertical rail on the right to free vertical space, the session list becomes a collapsible left sidebar, and all **设置** items render in a unified master-detail split pane.
 
 ### Appearance and theme mode
 
 Open **设置 → 外观** (Settings → Appearance) to toggle **跟随系统自动切换** (Follow system automatically) under **主题模式** (Theme mode). When turned off, you can choose **浅色** (Light) or **深色** (Dark) manually instead of following the system. Under **配色** (Color palette), choose Indigo (default), Forest Green, Warm Brown, or Violet. Changes take effect immediately and are saved only on this device.
+
+### Server connection
+
+Before the app is connected to a server, it shows a centered welcome sign-in screen. Once connected, open **设置 → 服务器连接** (Settings → Server connection) to inspect or update the server address and access key in the same card layout as other Settings pages. Confirmation for active runs or unsent drafts appears only when you tap **保存并连接** (Save & connect).
+
+### MCP servers
+
+Open **设置 → MCP 服务** (Settings → MCP servers) to add, edit, reconnect, or delete external MCP servers and control whether each server is enabled for chat. Per-subagent MCP opt-in selections are configured individually under **设置 → Subagent**.
+
+### Subagents
+
+Open **设置 → Subagent** to view all registered specialized subagents, toggle their unified enabled switch directly on the list or detail screen, inspect built-in prompts and tools, edit domain instructions (`AGENTS.md`), and opt in MCP servers per subagent. The SMS subagent is off by default and automatically enables when you turn on **同步新短信** or upload SMS messages.
 
 ### Sync new SMS messages
 
@@ -121,7 +145,7 @@ Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短
 
 If Android denies permission, tap **打开应用设置** (Open app settings) and grant access under **Permissions → SMS**. If Android reports a restricted setting, tap **Allow restricted settings** in the upper-right menu on the App info screen. Then grant SMS access or return to the app to retry. After your first grant, make sure **Sync new SMS messages** is on and send a new SMS to test it.
 
-The pending count is for new messages not yet uploaded. A new message may upload immediately, so check **上次确认成功** (Last confirmed) if the count stays at zero. If the server disables or pauses intake, pending messages stay on the device. Tap **立即同步** (Sync now) once the server resumes intake. If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
+The pending count is for new messages not yet uploaded. A new message may upload immediately, so check **上次确认成功** (Last confirmed) if the count stays at zero. Turning on **Sync new SMS messages** or uploading SMS automatically enables the SMS subagent on the server; if the server pauses intake, pending messages stay on the device and can be retried with **立即同步** (Sync now). If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
 
 ### Import SMS history
 
