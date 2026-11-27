@@ -26,10 +26,13 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   static const _storage = FlutterSecureStorage();
   static const _connectionKey = 'pi-muse-connection';
   static const _paletteKey = 'pi-muse-palette';
+  static const _themeModeKey = 'pi-muse-theme-mode';
   final _preferences = SharedPreferencesAsync();
   late final _appearance = AppearanceSettings(
     readPalette: () => _preferences.getString(_paletteKey),
     writePalette: (id) => _preferences.setString(_paletteKey, id),
+    readThemeMode: () => _preferences.getString(_themeModeKey),
+    writeThemeMode: (id) => _preferences.setString(_themeModeKey, id),
   );
   ChatController? _chat;
   Uri? _address;
@@ -185,6 +188,7 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: museTheme(palette.colors(Brightness.light)),
       darkTheme: museTheme(palette.colors(Brightness.dark)),
+      themeMode: _appearance.themeMode,
       home: Builder(
         builder: (context) {
           if (_loading) {

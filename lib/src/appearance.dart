@@ -90,52 +90,104 @@ ThemeData museTheme(ColorScheme colors) {
   );
 }
 
+String themeModeId(ThemeMode mode) => switch (mode) {
+  ThemeMode.system => 'system',
+  ThemeMode.light => 'light',
+  ThemeMode.dark => 'dark',
+};
+
+ThemeMode themeModeFromId(String? id) => switch (id) {
+  'light' => ThemeMode.light,
+  'dark' => ThemeMode.dark,
+  _ => ThemeMode.system,
+};
+
+Future<String?> _noopRead() async => null;
+Future<void> _noopWrite(String _) async {}
+
 class AppearanceSettings extends ChangeNotifier {
   AppearanceSettings({
     required Future<String?> Function() readPalette,
     required Future<void> Function(String) writePalette,
+    Future<String?> Function() readThemeMode = _noopRead,
+    Future<void> Function(String) writeThemeMode = _noopWrite,
   }) : _readPalette = readPalette,
-       _writePalette = writePalette;
+       _writePalette = writePalette,
+       _readThemeMode = readThemeMode,
+       _writeThemeMode = writeThemeMode;
 
   final Future<String?> Function() _readPalette;
   final Future<void> Function(String) _writePalette;
+  final Future<String?> Function() _readThemeMode;
+  final Future<void> Function(String) _writeThemeMode;
   MusePalette _palette = MusePalette.indigo;
+  ThemeMode _themeMode = ThemeMode.system;
   bool _saving = false;
   bool _saveFailed = false;
   bool _disposed = false;
 
   MusePalette get palette => _palette;
+  ThemeMode get themeMode => _themeMode;
   bool get saving => _saving;
   bool get saveFailed => _saveFailed;
 
   Future<void> restore() async {
-    MusePalette saved;
+    MusePalette savedPalette;
     try {
-      saved = MusePalette.fromId(await _readPalette());
+      savedPalette = MusePalette.fromId(await _readPalette());
     } catch (_) {
-      saved = MusePalette.indigo;
+      savedPalette = MusePalette.indigo;
+    }
+    ThemeMode savedThemeMode;
+    try {
+      savedThemeMode = themeModeFromId(await _readThemeMode());
+    } catch (_) {
+      savedThemeMode = ThemeMode.system;
     }
     if (_disposed) return;
-    _palette = saved;
+    _palette = savedPalette;
+    _themeMode = savedThemeMode;
     notifyListeners();
   }
 
-  Future<void> select(MusePalette palette) async {
-    if (_disposed || _saving || palette == _palette) return;
-    final previous = _palette;
-    _palette = palette;
+  Future<void> _persist({
+    required void Function() apply,
+    required void Function() revert,
+    required Future<void> Function() write,
+  }) async {
+    apply();
     _saving = true;
     _saveFailed = false;
     notifyListeners();
     try {
-      await _writePalette(palette.id);
+      await write();
     } catch (_) {
-      _palette = previous;
+      revert();
       _saveFailed = true;
     } finally {
       _saving = false;
       if (!_disposed) notifyListeners();
     }
+  }
+
+  Future<void> select(MusePalette palette) async {
+    if (_disposed || _saving || palette == _palette) return;
+    final previous = _palette;
+    await _persist(
+      apply: () => _palette = palette,
+      revert: () => _palette = previous,
+      write: () => _writePalette(palette.id),
+    );
+  }
+
+  Future<void> selectThemeMode(ThemeMode mode) async {
+    if (_disposed || _saving || mode == _themeMode) return;
+    final previous = _themeMode;
+    await _persist(
+      apply: () => _themeMode = mode,
+      revert: () => _themeMode = previous,
+      write: () => _writeThemeMode(themeModeId(mode)),
+    );
   }
 
   @override

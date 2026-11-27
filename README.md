@@ -26,9 +26,9 @@
 
 底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」「服务器连接」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页。
 
-### 更换配色
+### 外观与主题
 
-打开「设置 → 外观」，在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的配色。设置仅保存在本机，浅色和深色仍自动跟随系统。
+打开「设置 → 外观」，可以在「主题模式」中开关「跟随系统自动切换」。默认跟随系统自动切换浅色和深色；关闭后可手动固定为「浅色」或「深色」。下方可在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的外观设置。设置仅保存在本机。
 
 ### 同步新短信
 
@@ -111,9 +111,9 @@ In the drawer, open **更多操作** (More actions) next to a topic session to r
 
 Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance), **服务器连接** (Server connection), **短信同步** (SMS sync), or **应用更新** (App updates) from the list. Back returns to Settings home.
 
-### Change the color palette
+### Appearance and theme mode
 
-Open **设置 → 外观** (Settings → Appearance) and choose Indigo (default), Forest Green, Warm Brown, or Violet under **配色** (Color palette). The change takes effect immediately. The app remembers the last saved palette on this device and still follows the system's light or dark mode.
+Open **设置 → 外观** (Settings → Appearance) to toggle **跟随系统自动切换** (Follow system automatically) under **主题模式** (Theme mode). When turned off, you can choose **浅色** (Light) or **深色** (Dark) manually instead of following the system. Under **配色** (Color palette), choose Indigo (default), Forest Green, Warm Brown, or Violet. Changes take effect immediately and are saved only on this device.
 
 ### Sync new SMS messages
 

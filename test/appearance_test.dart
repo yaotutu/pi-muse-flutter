@@ -43,33 +43,53 @@ void main() {
   });
 
   test(
-    'appearance restores stable IDs, falling back for unknown or unreadable data',
+    'appearance restores stable palette and theme mode IDs, falling back independently',
     () async {
-      for (final (id, expected) in [
-        ('warm-brown', MusePalette.warmBrown),
-        ('future-palette', MusePalette.indigo),
-        (null, MusePalette.indigo),
+      for (final (id, modeId, expectedPalette, expectedMode) in [
+        ('warm-brown', 'light', MusePalette.warmBrown, ThemeMode.light),
+        ('forest', 'dark', MusePalette.forest, ThemeMode.dark),
+        ('violet', 'system', MusePalette.violet, ThemeMode.system),
+        ('future-palette', 'future-mode', MusePalette.indigo, ThemeMode.system),
+        (null, null, MusePalette.indigo, ThemeMode.system),
       ]) {
         final settings = AppearanceSettings(
           readPalette: () async => id,
           writePalette: (_) async => fail('Restore must not write'),
+          readThemeMode: () async => modeId,
+          writeThemeMode: (_) async => fail('Restore must not write'),
         );
         addTearDown(settings.dispose);
         await settings.restore();
-        expect(settings.palette, expected);
+        expect(settings.palette, expectedPalette);
+        expect(settings.themeMode, expectedMode);
       }
+
       final broken = AppearanceSettings(
         readPalette: () async => throw StateError('unavailable'),
         writePalette: (_) async => fail('Restore must not write'),
+        readThemeMode: () async => 'light',
+        writeThemeMode: (_) async => fail('Restore must not write'),
       );
       addTearDown(broken.dispose);
       await broken.restore();
       expect(broken.palette, MusePalette.indigo);
+      expect(broken.themeMode, ThemeMode.light);
+
+      final brokenMode = AppearanceSettings(
+        readPalette: () async => 'warm-brown',
+        writePalette: (_) async => fail('Restore must not write'),
+        readThemeMode: () async => throw StateError('unavailable'),
+        writeThemeMode: (_) async => fail('Restore must not write'),
+      );
+      addTearDown(brokenMode.dispose);
+      await brokenMode.restore();
+      expect(brokenMode.palette, MusePalette.warmBrown);
+      expect(brokenMode.themeMode, ThemeMode.system);
     },
   );
 
   testWidgets(
-    'failed saving reverts the palette and exposes the error on the same route',
+    'failed saving reverts palette and theme mode and exposes the error on the same route',
     (tester) async {
       final save = Completer<void>();
       final writes = <String>[];
@@ -79,12 +99,16 @@ void main() {
           writes.add(id);
           return save.future;
         },
+        readThemeMode: () async => 'dark',
+        writeThemeMode: (_) async => throw StateError('unavailable'),
       );
       addTearDown(settings.dispose);
       await settings.restore();
       await tester.pumpWidget(
         MaterialApp(home: AppearancePage(settings: settings)),
       );
+      await tester.ensureVisible(find.text('紫色'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('紫色'));
       await tester.pump();
       expect(settings.palette, MusePalette.violet);
@@ -94,17 +118,27 @@ void main() {
       save.completeError(StateError('unavailable'));
       await tester.pumpAndSettle();
       expect(settings.palette, MusePalette.forest);
-      expect(find.text('配色未能保存，已恢复上次设置。请重试。'), findsOneWidget);
+      expect(find.text('外观设置未能保存，已恢复上次设置。请重试。'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('浅色'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('浅色'));
+      await tester.pumpAndSettle();
+      expect(settings.themeMode, ThemeMode.dark);
+      expect(find.text('外观设置未能保存，已恢复上次设置。请重试。'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'settings can change both themes without replacing the chat or its draft',
+    'settings can change palette and disable auto theme switching without losing chat state',
     (tester) async {
       String? stored;
+      String? storedMode;
       final settings = AppearanceSettings(
         readPalette: () async => stored,
         writePalette: (id) async => stored = id,
+        readThemeMode: () async => storedMode,
+        writeThemeMode: (id) async => storedMode = id,
       );
       addTearDown(settings.dispose);
       final address = Uri.parse('http://localhost');
@@ -124,6 +158,7 @@ void main() {
           builder: (_, _) => MaterialApp(
             theme: museTheme(settings.palette.colors(Brightness.light)),
             darkTheme: museTheme(settings.palette.colors(Brightness.dark)),
+            themeMode: settings.themeMode,
             home: ChatPage(
               key: ObjectKey(chat),
               chat: chat,
@@ -141,6 +176,9 @@ void main() {
       expect(find.text('服务器连接'), findsOneWidget);
       await tester.tap(find.text('外观'));
       await tester.pumpAndSettle();
+      expect(find.text('主题模式'), findsOneWidget);
+      expect(find.text('跟随系统自动切换'), findsOneWidget);
+      expect(find.byType(RadioListTile<ThemeMode>), findsNothing);
       expect(find.text('配色'), findsOneWidget);
       expect(find.byType(RadioListTile<MusePalette>), findsNWidgets(4));
       await tester.tap(find.text('森林绿'));
@@ -157,6 +195,41 @@ void main() {
         Theme.of(tester.element(palettePage)).colorScheme,
         MusePalette.forest.colors(Brightness.dark),
       );
+
+      // 在系统深色下关闭自动切换并改选浅色主题
+      await tester.tap(find.text('跟随系统自动切换'));
+      await tester.pumpAndSettle();
+      expect(storedMode, 'dark');
+      expect(find.text('浅色'), findsOneWidget);
+      expect(find.text('深色'), findsOneWidget);
+      expect(
+        Theme.of(tester.element(palettePage)).colorScheme.brightness,
+        Brightness.dark,
+      );
+
+      await tester.tap(find.text('浅色'));
+      await tester.pumpAndSettle();
+      expect(storedMode, 'light');
+      expect(
+        Theme.of(tester.element(palettePage)).colorScheme,
+        MusePalette.forest.colors(Brightness.light),
+      );
+
+      // 重新开启自动切换后恢复跟随系统深色，再关闭并固定为浅色验证跨页持久化
+      await tester.tap(find.text('跟随系统自动切换'));
+      await tester.pumpAndSettle();
+      expect(storedMode, 'system');
+      expect(
+        Theme.of(tester.element(palettePage)).colorScheme,
+        MusePalette.forest.colors(Brightness.dark),
+      );
+
+      await tester.tap(find.text('跟随系统自动切换'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('浅色'));
+      await tester.pumpAndSettle();
+      expect(storedMode, 'light');
+
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(
@@ -174,16 +247,19 @@ void main() {
       );
       expect(
         Theme.of(tester.element(chatFinder)).colorScheme,
-        MusePalette.forest.colors(Brightness.dark),
+        MusePalette.forest.colors(Brightness.light),
       );
 
       final restored = AppearanceSettings(
         readPalette: () async => stored,
         writePalette: (_) async => fail('Restore must not write'),
+        readThemeMode: () async => storedMode,
+        writeThemeMode: (_) async => fail('Restore must not write'),
       );
       addTearDown(restored.dispose);
       await restored.restore();
       expect(restored.palette, MusePalette.forest);
+      expect(restored.themeMode, ThemeMode.light);
     },
   );
 }
