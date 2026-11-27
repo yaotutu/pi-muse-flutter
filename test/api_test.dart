@@ -168,6 +168,16 @@ void main() {
           'piSessionId': 'history',
           'reaction': null,
         });
+
+        final reconnect = await api.post('/api/mcp/servers/demo/reconnect');
+        expect(reconnect['method'], 'POST');
+        expect(reconnect['path'], '/api/mcp/servers/demo/reconnect');
+        expect(reconnect['body'], '');
+
+        final deleted = await api.delete('/api/mcp/servers/demo');
+        expect(deleted['method'], 'DELETE');
+        expect(deleted['path'], '/api/mcp/servers/demo');
+        expect(deleted['body'], '');
       },
     );
 

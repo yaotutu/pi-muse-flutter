@@ -11,9 +11,11 @@ import 'chat.dart';
 import 'chat_attachment_view.dart';
 import 'chat_message_view.dart';
 import 'execution_details_page.dart';
+import 'mcp_page.dart';
 import 'session_management.dart';
 import 'sms_sync.dart';
 import 'sms_sync_page.dart';
+import 'subagents_page.dart';
 import 'workspace_files.dart';
 import 'workspace_files_page.dart';
 
@@ -204,6 +206,32 @@ class _ChatPageState extends State<ChatPage> {
                 title: const Text('服务器连接'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: widget.onConnection,
+              ),
+              ListTile(
+                leading: const Icon(Icons.extension_outlined),
+                title: const Text('MCP 服务'),
+                enabled: !_chat.expired,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _chat.expired
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => McpPage(api: _chat.api),
+                        ),
+                      ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.smart_toy_outlined),
+                title: const Text('专职助手'),
+                enabled: !_chat.expired,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _chat.expired
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => SubagentsPage(api: _chat.api),
+                        ),
+                      ),
               ),
               if (SmsSync.supported)
                 ListTile(

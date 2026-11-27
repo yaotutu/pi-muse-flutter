@@ -68,9 +68,9 @@ class _SessionApi extends MuseApi {
   }
 
   @override
-  Future<Json> delete(String path, Json body) async {
+  Future<Json> delete(String path, [Json? body]) async {
     expect(path, '/api/sessions/topic');
-    deletes.add(body);
+    deletes.add(body!);
     if (deletes.length == 1) {
       throw const ApiException(409, code: 'SESSION_SCHEDULES_CHANGED');
     }
@@ -95,9 +95,9 @@ class _MessageApi extends _SessionApi {
   }
 
   @override
-  Future<Json> post(String path, Json body) async {
+  Future<Json> post(String path, [Json? body]) async {
     expect(path, '/api/conversation/stop');
-    stops.add(body);
+    stops.add(body!);
     return {'stopped': false};
   }
 
@@ -1800,10 +1800,10 @@ class _InlineApprovalApi extends _ExecutionApi {
   late Json nextResponse;
 
   @override
-  Future<Json> post(String path, Json body) async {
+  Future<Json> post(String path, [Json? body]) async {
     final match = RegExp(r'^/api/approvals/([^/]+)/decision$').firstMatch(path);
     if (match != null) {
-      decisions.add((match.group(1)!, body['decision'] as String));
+      decisions.add((match.group(1)!, body!['decision'] as String));
       return nextResponse;
     }
     return super.post(path, body);

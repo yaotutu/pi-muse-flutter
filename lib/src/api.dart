@@ -175,7 +175,7 @@ class MuseApi {
   Future<Json> get(String path, {Map<String, String>? query}) =>
       _request('GET', path, query: query);
 
-  Future<Json> post(String path, Json body) =>
+  Future<Json> post(String path, [Json? body]) =>
       _request('POST', path, body: body);
 
   Future<Json> put(String path, Json body) => _request('PUT', path, body: body);
@@ -183,7 +183,7 @@ class MuseApi {
   Future<Json> patch(String path, Json body) =>
       _request('PATCH', path, body: body);
 
-  Future<Json> delete(String path, Json body) =>
+  Future<Json> delete(String path, [Json? body]) =>
       _request('DELETE', path, body: body);
 
   Stream<SseFrame> events() => _stream('GET', '/api/events', workspace: true);

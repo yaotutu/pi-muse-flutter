@@ -83,9 +83,9 @@ class _Transport implements MuseApi {
   };
 
   @override
-  Future<Json> post(String path, Json body) async {
+  Future<Json> post(String path, [Json? body]) async {
     expect(path, '/api/conversation/stop');
-    stops.add(body);
+    stops.add(body!);
     return stopResult == null ? {'stopped': true} : await stopResult!();
   }
 
@@ -116,9 +116,9 @@ class _Transport implements MuseApi {
   }
 
   @override
-  Future<Json> delete(String path, Json body) async {
+  Future<Json> delete(String path, [Json? body]) async {
     final id = path.split('/').last;
-    sessionWrites.add(('DELETE', id, body));
+    sessionWrites.add(('DELETE', id, body!));
     if (remove != null) return await remove!(id, body);
     directory.remove(id);
     return _removed;
