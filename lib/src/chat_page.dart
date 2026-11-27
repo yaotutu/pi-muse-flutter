@@ -41,15 +41,8 @@ class _ChatPageState extends State<ChatPage> {
   final _composer = TextEditingController();
   final _focus = FocusNode();
   final _position = PageStorageBucket();
-  final Set<String> _expandedRuns = {};
   bool _settingsSelected = false;
   ChatController get _chat => widget.chat;
-
-  void _toggleRunExpanded(String key) {
-    setState(() {
-      if (!_expandedRuns.remove(key)) _expandedRuns.add(key);
-    });
-  }
 
   @override
   void initState() {
@@ -362,10 +355,6 @@ class _ChatPageState extends State<ChatPage> {
             _chat.activeApprovals.every((approval) => approval.isFileDiff);
         final chatApprovals = _chat.chatApprovals(conversation.id);
         final pending = conversation.submission;
-        final hasLiveReply = localRunning
-            ? pending!.replies.isNotEmpty
-            : conversation.liveReplies.isNotEmpty;
-        final showProcessingCard = running && !hasLiveReply;
         final lastRun = !running && pending == null && messages.isNotEmpty
             ? conversation.lastRun
             : null;
@@ -400,28 +389,12 @@ class _ChatPageState extends State<ChatPage> {
                 approval.status == 'pending' ? approval : null,
               ),
             ),
-          if (showProcessingCard)
-            Builder(
-              builder: (_) {
-                final liveKey =
-                    remoteRun?['runId'] as String? ??
-                    '__live_${conversation.id}';
-                return _RunProcessBar(
-                  run: remoteRun,
-                  steps: _chat.stepsOf(remoteRun),
-                  running: true,
-                  expanded: _expandedRuns.contains(liveKey),
-                  onToggle: () => _toggleRunExpanded(liveKey),
-                  onOpenDetails: () =>
-                      _openExecutionDetails(conversation.id, title),
-                  onOpenApproval: (id) => _showApproval(
-                    context,
-                    conversation.id,
-                    id,
-                    _chat.approvals[id],
-                  ),
-                );
-              },
+          if (running)
+            _LiveRunStepBar(
+              run: remoteRun,
+              steps: _chat.stepsOf(remoteRun),
+              onOpenDetails: () =>
+                  _openExecutionDetails(conversation.id, title),
             )
           else if (terminalNoticeStatus != null)
             _TerminalRunNotice(
@@ -579,51 +552,6 @@ class _ChatPageState extends State<ChatPage> {
                                               !pending.replies.containsKey(
                                                 message.id,
                                               ));
-                                      final isLiveReply =
-                                          message.role == 'assistant' &&
-                                          (!confirmed ||
-                                              conversation.liveReplies
-                                                  .containsKey(message.id));
-                                      final Json? processRun;
-                                      if (message.role != 'assistant') {
-                                        processRun = null;
-                                      } else if (isLiveReply) {
-                                        final prev = position > 0
-                                            ? messages[position - 1]
-                                            : null;
-                                        final prevIsLiveReply =
-                                            prev != null &&
-                                            prev.role == 'assistant' &&
-                                            ((pending != null &&
-                                                    pending.replies.containsKey(
-                                                      prev.id,
-                                                    )) ||
-                                                conversation.liveReplies
-                                                    .containsKey(prev.id));
-                                        processRun = prevIsLiveReply
-                                            ? null
-                                            : remoteRun;
-                                      } else {
-                                        final runId = message.runId;
-                                        final prevSameRun =
-                                            position > 0 &&
-                                            messages[position - 1].role ==
-                                                'assistant' &&
-                                            runId != null &&
-                                            runId.isNotEmpty &&
-                                            messages[position - 1].runId ==
-                                                runId;
-                                        processRun = prevSameRun
-                                            ? null
-                                            : _chat.runForMessage(
-                                                conversation.id,
-                                                message,
-                                              );
-                                      }
-                                      final processSteps =
-                                          _chat.stepsOf(processRun);
-                                      final processRunId =
-                                          processRun?['runId'] as String?;
                                       return Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.stretch,
@@ -634,38 +562,6 @@ class _ChatPageState extends State<ChatPage> {
                                                 previous,
                                               ))
                                             _ChatDateLabel(sentAt),
-                                          if (processSteps.isNotEmpty &&
-                                              processRunId != null &&
-                                              processRunId.isNotEmpty) ...[
-                                            _RunProcessBar(
-                                              key: ValueKey(
-                                                'process-$processRunId',
-                                              ),
-                                              run: processRun,
-                                              steps: processSteps,
-                                              running: isLiveReply && running,
-                                              expanded: _expandedRuns.contains(
-                                                processRunId,
-                                              ),
-                                              onToggle: () =>
-                                                  _toggleRunExpanded(
-                                                    processRunId,
-                                                  ),
-                                              onOpenDetails: () =>
-                                                  _openExecutionDetails(
-                                                    conversation.id,
-                                                    title,
-                                                  ),
-                                              onOpenApproval: (id) =>
-                                                  _showApproval(
-                                                    context,
-                                                    conversation.id,
-                                                    id,
-                                                    _chat.approvals[id],
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                          ],
                                           ChatMessageView(
                                             key: ValueKey(message.id),
                                             message: message,
@@ -2004,157 +1900,115 @@ class _FileText extends StatelessWidget {
   }
 }
 
-class _RunProcessBar extends StatelessWidget {
-  const _RunProcessBar({
-    super.key,
+class _LiveRunStepBar extends StatelessWidget {
+  const _LiveRunStepBar({
     required this.run,
     required this.steps,
-    required this.running,
-    required this.expanded,
-    required this.onToggle,
     required this.onOpenDetails,
-    required this.onOpenApproval,
   });
 
   final Json? run;
   final List<Json> steps;
-  final bool running;
-  final bool expanded;
-  final VoidCallback onToggle;
   final VoidCallback onOpenDetails;
-  final ValueChanged<String> onOpenApproval;
 
-  String _headerText() {
-    if (running) {
-      final waiting = steps.where((s) => s['status'] == 'waiting_approval').lastOrNull;
-      if (waiting != null) {
-        final t = waiting['title'] as String? ?? '待审批';
-        return '等待审批 · $t';
+  String _latestRecordText() {
+    if (steps.isNotEmpty) {
+      Json? pick = steps
+          .where((s) => s['status'] == 'waiting_approval')
+          .lastOrNull;
+      pick ??= steps.where((s) => s['status'] == 'running').lastOrNull;
+      if (pick == null) {
+        final last = steps.last;
+        if (last['kind'] == 'file_commit' && steps.length >= 2) {
+          final prev = steps[steps.length - 2];
+          final prevTool = prev['toolName'];
+          if (prev['kind'] == 'tool' &&
+              (prevTool == 'write' || prevTool == 'edit') &&
+              prev['detail'] == last['detail']) {
+            pick = prev;
+          }
+        }
+        pick ??= last;
       }
-      if (steps.isNotEmpty) {
-        final active = steps.where((s) => s['status'] == 'running').lastOrNull ??
-            steps.last;
-        final t = active['title'] as String? ?? '处理中';
-        return '处理中 · $t（${steps.length} 步）';
-      }
-      final rawLabel = run?['label'];
-      return rawLabel is String && rawLabel.isNotEmpty
-          ? rawLabel
-          : '助手正在处理中…';
+      final title = pick['title'] as String?;
+      final detail = pick['detail'] as String?;
+      final text = [
+        if (title != null && title.isNotEmpty) title else '正在执行',
+        if (detail != null && detail.isNotEmpty) detail,
+      ].join(' · ');
+      return pick['status'] == 'waiting_approval' ? '等待审批 · $text' : text;
     }
-    final status = run?['status'];
-    if (status == 'failed') return '执行失败 · ${steps.length} 步';
-    if (status == 'cancelled') return '已取消 · ${steps.length} 步';
-    return '已执行 ${steps.length} 步';
+    final tools = (run?['tools'] as List? ?? const []).cast<Json>();
+    if (tools.isNotEmpty) {
+      final label = tools.last['label'] as String?;
+      if (label != null && label.isNotEmpty) return label;
+    }
+    final subagents = (run?['subagents'] as List? ?? const []).cast<Json>();
+    if (subagents.isNotEmpty) {
+      final role = subagents.last['role'] as String?;
+      if (role != null && role.isNotEmpty) return '委派子代理 · $role';
+    }
+    final rawLabel = run?['label'];
+    if (rawLabel is String && rawLabel.isNotEmpty) return rawLabel;
+    return '助手正在处理中…';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final status = run?['status'];
-    final tools = (run?['tools'] as List? ?? const []).cast<Json>();
-    final subagents = (run?['subagents'] as List? ?? const []).cast<Json>();
-    final fallbackDetail = steps.isEmpty
-        ? [
-            if (tools.isNotEmpty) '工具 ${tools.length} 项进行中',
-            if (subagents.isNotEmpty) '子任务 ${subagents.length} 项进行中',
-          ].join(' · ')
-        : '';
-    final accentColor = switch (status) {
-      'failed' => colors.error,
-      _ when steps.any((s) => s['status'] == 'waiting_approval') =>
-        colors.primary,
-      _ when running => colors.primary,
-      _ => colors.onSurfaceVariant,
-    };
-    final canExpand = steps.isNotEmpty;
+    final waitingApproval = steps.any((s) => s['status'] == 'waiting_approval');
     return Material(
       color: colors.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colors.outlineVariant),
+        side: BorderSide(
+          color: waitingApproval
+              ? colors.primary.withValues(alpha: 0.45)
+              : colors.outlineVariant,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: canExpand ? onToggle : onOpenDetails,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    running
-                        ? Icons.hourglass_top_rounded
-                        : status == 'failed'
-                        ? Icons.error_outline
-                        : Icons.route_outlined,
-                    size: 16,
-                    color: accentColor,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _headerText(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (fallbackDetail.isNotEmpty)
-                          Text(
-                            fallbackDetail,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (canExpand) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      expanded ? '收起' : '查看过程',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ] else
-                    Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onOpenDetails,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            children: [
+              Icon(
+                waitingApproval
+                    ? Icons.fact_check_outlined
+                    : Icons.hourglass_top_rounded,
+                size: 16,
+                color: colors.primary,
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _latestRecordText(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                steps.length > 1 ? '共 ${steps.length} 步' : '全部动态',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: colors.onSurfaceVariant,
+              ),
+            ],
           ),
-          if (expanded && canExpand) ...[
-            Divider(height: 1, color: colors.outlineVariant),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-              child: RunStepsList(
-                steps: steps,
-                compact: true,
-                onOpenApproval: onOpenApproval,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

@@ -288,14 +288,14 @@ void main() {
       expect(find.text('动态'), findsNothing);
       expect(find.text('历史'), findsNothing);
       expect(find.text('读取资料'), findsOneWidget);
-      expect(find.text('第一轮调研'), findsOneWidget);
+      expect(find.text('搜索网页 · pi muse'), findsOneWidget);
+      expect(find.text('第一轮调研'), findsNothing);
       expect(find.text('其他会话运行'), findsNothing);
       await tester.tap(find.text('加载更多'));
       await tester.pumpAndSettle();
       expect(api.runCursors.take(2).toList(), [null, 'opaque-cursor']);
-      await tester.tap(find.text('第二轮读取'));
-      await tester.pumpAndSettle();
       expect(find.text('读取测试文件 · test.txt'), findsOneWidget);
+      expect(find.text('第二轮读取'), findsNothing);
       await tester.tap(find.text('审批'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看审批历史'));
@@ -318,7 +318,7 @@ void main() {
   );
 
   testWidgets(
-    'inline process bar is hidden for 0-step replies and toggles steps inline for tool-using replies',
+    'chat shows only single latest live step while running, opens timeline on tap, and hides when finished',
     (tester) async {
       final api = _ExecutionApi();
       final chat = ChatController(api, () => api);
@@ -350,34 +350,82 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      chat.active.history = const [
-        ChatMessage('u1', 'user', '1+1等于几'),
-        ChatMessage('a1', 'assistant', '等于 2。', runId: 'plain-run'),
-        ChatMessage('u2', 'user', '搜索并改写文档'),
-        ChatMessage('a2', 'assistant', '已完成并请求确认。', runId: 'tool-run'),
-      ];
+      // Active multi-step run surfaces only the single latest step in chat.
       api.frames.add(
         const SseFrame(
           event: 'session_status_updated',
           data: {
             'instanceId': 'test-instance',
             'sessionId': mainSession,
-            'runId': 'plain-run',
+            'runId': 'live-tool-run',
             'revision': 2,
-            'status': 'succeeded',
-            'steps': [],
+            'status': 'running',
+            'title': '搜索并改写文档',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': 'pi muse docs',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:01.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'approval',
+                'title': '请求修改文件',
+                'detail': 'notes/plan.md',
+                'status': 'waiting_approval',
+                'result': null,
+                'toolName': null,
+                'approvalId': 'past',
+                'startedAt': '2026-01-01T00:00:01.000Z',
+                'endedAt': null,
+              },
+            ],
           },
         ),
       );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('等待审批 · 请求修改文件 · notes/plan.md'), findsOneWidget);
+      expect(find.text('共 2 步'), findsOneWidget);
+      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
+
+      // Tapping the single-line bar opens ExecutionDetailsPage flat timeline.
+      await tester.tap(find.text('等待审批 · 请求修改文件 · notes/plan.md'));
+      await tester.pumpAndSettle();
+      expect(find.text('搜索网页 · pi muse docs'), findsOneWidget);
+      expect(find.text('请求修改文件 · notes/plan.md'), findsOneWidget);
+
+      await tester.tap(find.text('请求修改文件 · notes/plan.md'));
+      await tester.pumpAndSettle();
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('新文'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // Completing normally (Way A) clears the live bar from chat.
       api.frames.add(
         const SseFrame(
           event: 'session_status_updated',
           data: {
             'instanceId': 'test-instance',
             'sessionId': mainSession,
-            'runId': 'tool-run',
+            'runId': 'live-tool-run',
             'revision': 3,
             'status': 'succeeded',
+            'endedAt': '2026-01-01T00:00:03.000Z',
             'steps': [
               {
                 'id': 's1',
@@ -410,26 +458,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-
-      // Plain reply has no bar; tool reply shows collapsed 1-line bar.
-      expect(find.text('已执行 2 步'), findsOneWidget);
-      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
-
-      await tester.tap(find.text('已执行 2 步'));
-      await tester.pumpAndSettle();
-      expect(find.text('搜索网页 · pi muse docs'), findsOneWidget);
-      expect(find.text('请求修改文件 · notes/plan.md'), findsOneWidget);
-
-      await tester.tap(find.text('请求修改文件 · notes/plan.md'));
-      await tester.pumpAndSettle();
-      expect(find.text('原文'), findsOneWidget);
-      expect(find.text('新文'), findsOneWidget);
-
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('已执行 2 步'));
-      await tester.pumpAndSettle();
-      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
+      expect(find.text('共 2 步'), findsNothing);
+      expect(find.text('已执行 2 步'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -1323,8 +1353,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(find.text('正在调用模型'), findsOneWidget);
-      expect(find.text('工具 1 项进行中'), findsOneWidget);
+      expect(find.text('读取笔记'), findsOneWidget);
       expect(find.byTooltip('停止回复'), findsOneWidget);
 
       // 模拟远端运行失败结束并写入 lastRun
@@ -1648,11 +1677,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('1+1等于几'), findsNothing);
       expect(find.text('正在处理请求'), findsNothing);
-      expect(find.text('查一下北京天气并记草稿'), findsOneWidget);
-      expect(
-        find.text('搜索网页（北京天气） → 写入文件（shared/weather.md）·已拒绝'),
-        findsOneWidget,
-      );
+      expect(find.text('查一下北京天气并记草稿'), findsNothing);
+      expect(find.text('搜索网页 · 北京天气'), findsOneWidget);
+      expect(find.text('写入文件 · shared/weather.md'), findsOneWidget);
+      expect(find.text('已拒绝 · 未批准，未写入文件'), findsOneWidget);
+      expect(find.text('文件提交 · shared/weather.md'), findsNothing);
 
       // Empty runs show helpful explanation instead of a blank tile.
       api.runs = <Json>[];

@@ -199,7 +199,6 @@ class _RunHistoryTab extends StatefulWidget {
 class _RunHistoryTabState extends State<_RunHistoryTab>
     with AutomaticKeepAliveClientMixin {
   final _fetched = <String, Json>{};
-  final _expanded = <String>{};
   (int, int)? _version;
   bool _loading = false;
   bool _failed = false;
@@ -327,26 +326,31 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
         }
         final pending = widget.chat.sessionApprovals(widget.sessionId);
         final runs = _mergedRuns();
+        final timeline = _buildTimelineEntries(runs);
+        final groups = _groupEntriesByDay(timeline);
         return RefreshIndicator(
           onRefresh: _load,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
-              if (pending.isNotEmpty)
+              if (pending.isNotEmpty) ...[
                 ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                   leading: const Icon(Icons.fact_check_outlined),
                   title: Text('等待你的审批（${pending.length} 项）'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onOpenPendingTab,
                 ),
+                const Divider(height: 1),
+              ],
               if (_loading) const LinearProgressIndicator(),
-              if (_failed && runs.isEmpty)
+              if (_failed && timeline.isEmpty)
                 TextButton(
                   onPressed: _load,
                   child: const Text('读取失败，点此重试'),
                 )
-              else if (_loaded && runs.isEmpty && !_loading)
+              else if (_loaded && timeline.isEmpty && !_loading)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 12),
                   child: Column(
@@ -372,8 +376,26 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
                     ],
                   ),
                 ),
-              for (final run in runs) _buildRunCard(context, run),
-              if (_failed && runs.isNotEmpty)
+              for (final group in groups) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
+                  child: Text(
+                    group.dayLabel,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                for (var i = 0; i < group.entries.length; i++)
+                  _TimelineItemRow(
+                    entry: group.entries[i],
+                    isFirst: i == 0,
+                    isLast: i == group.entries.length - 1,
+                    onOpenApproval: widget.onOpenApproval,
+                  ),
+              ],
+              if (_failed && timeline.isNotEmpty)
                 TextButton(
                   onPressed: _load,
                   child: const Text('加载失败，点此重试'),
@@ -392,164 +414,121 @@ class _RunHistoryTabState extends State<_RunHistoryTab>
     );
   }
 
-  Widget _buildRunCard(BuildContext context, Json run) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final runId = run['runId'] as String? ?? '';
-    final steps = widget.chat.stepsOf(run);
-    final tools = (run['tools'] as List? ?? const []).cast<Json>();
-    final subagents = (run['subagents'] as List? ?? const []).cast<Json>();
-    final hasDetails =
-        steps.isNotEmpty || tools.isNotEmpty || subagents.isNotEmpty;
-    final status = run['status'] as String?;
-    final isRunning = status == 'running';
-    final expanded = isRunning || _expanded.contains(runId);
-    final rawTitle = _displayText(run['title']);
-    final title = (rawTitle != null && rawTitle != '正在处理请求')
-        ? rawTitle
-        : (run['source'] == 'job' ? '定时任务' : '聊天执行');
-    final stepSummary = _summarizeRunSteps(steps);
-    final rawLabel = _displayText(run['label']);
-    final isGenericLabel =
-        rawLabel == '执行完成' || rawLabel == '执行已停止' || rawLabel == '执行失败';
-    final subagentSummary = subagents.isNotEmpty
-        ? '委派子任务：${subagents.map((a) => _displayText(a['role']) ?? '子任务').join('、')}'
-        : null;
-    final actionText = isRunning
-        ? ([
-            rawLabel ?? '进行中',
-            ?stepSummary,
-          ].join(' · '))
-        : (stepSummary ??
-            (!isGenericLabel ? rawLabel : null) ??
-            subagentSummary ??
-            rawLabel ??
-            executionStatus(status));
-    final timeText = _formatRunTime(run['startedAt']);
-    final (badgeBg, badgeFg) = switch (status) {
-      'running' => (colors.primaryContainer, colors.onPrimaryContainer),
-      'succeeded' || 'completed' => (
-        colors.secondaryContainer,
-        colors.onSecondaryContainer,
-      ),
-      'failed' => (colors.errorContainer, colors.onErrorContainer),
-      _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
-    };
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: hasDetails && !isRunning
-                  ? () => setState(() {
-                      if (!_expanded.remove(runId)) _expanded.add(runId);
-                    })
-                  : null,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          actionText,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: badgeBg,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          executionStatus(status),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: badgeFg,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (timeText != null || (hasDetails && !isRunning)) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (timeText != null)
-                              Text(
-                                timeText,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                ),
-                              ),
-                            if (hasDetails && !isRunning)
-                              Icon(
-                                expanded ? Icons.expand_less : Icons.expand_more,
-                                size: 18,
-                                color: colors.onSurfaceVariant,
-                              ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+  List<_TimelineEntry> _buildTimelineEntries(List<Json> runs) {
+    final entries = <_TimelineEntry>[];
+    for (final run in runs) {
+      final runStartedAt = _displayText(run['startedAt']);
+      final runEndedAt = _displayText(run['endedAt']);
+      final steps = widget.chat.stepsOf(run);
+      final tools = (run['tools'] as List? ?? const []).cast<Json>();
+      final subagents = (run['subagents'] as List? ?? const []).cast<Json>();
+      if (steps.isNotEmpty) {
+        final merged = <_TimelineEntry>[];
+        for (final step in steps) {
+          final kind = _displayText(step['kind']) ?? 'tool';
+          final toolName = _displayText(step['toolName']);
+          final title = _displayText(step['title']) ?? '执行步骤';
+          final detail = _displayText(step['detail']);
+          final status = _displayText(step['status']) ?? 'succeeded';
+          final result = _displayText(step['result']);
+          final approvalId = _displayText(step['approvalId']);
+          final timestamp =
+              _displayText(step['endedAt']) ??
+              _displayText(step['startedAt']) ??
+              runStartedAt;
+          if (kind == 'file_commit' && merged.isNotEmpty) {
+            final prev = merged.last;
+            final matchesPrevFileTool =
+                prev.kind == 'tool' &&
+                (prev.toolName == 'write' ||
+                    prev.toolName == 'edit' ||
+                    prev.title == '写入文件' ||
+                    prev.title == '编辑文件') &&
+                prev.detail == detail;
+            if (matchesPrevFileTool) {
+              merged[merged.length - 1] = prev.copyWith(
+                status: status,
+                result: result ?? prev.result,
+                approvalId: prev.approvalId ?? approvalId,
+                timestamp: timestamp ?? prev.timestamp,
+              );
+              continue;
+            }
+          }
+          merged.add(
+            _TimelineEntry(
+              kind: kind,
+              toolName: toolName,
+              title: title,
+              detail: detail,
+              status: status,
+              result: result,
+              approvalId: approvalId,
+              timestamp: timestamp,
             ),
-            if (expanded && steps.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              RunStepsList(
-                steps: steps,
-                onOpenApproval: widget.onOpenApproval,
-              ),
-            ] else if (expanded) ...[
-              for (final tool in tools)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.build_outlined),
-                  title: Text(_displayText(tool['label']) ?? '工具'),
-                  subtitle: Text(executionStatus(tool['status'])),
-                ),
-              for (final agent in subagents)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.account_tree_outlined),
-                  title: Text(_displayText(agent['role']) ?? '子任务'),
-                  subtitle: Text(
-                    _displayText(agent['label']) ??
-                        executionStatus(agent['status']),
-                  ),
-                ),
-            ],
-          ],
+          );
+        }
+        entries.addAll(merged.reversed);
+        continue;
+      }
+      if (tools.isNotEmpty || subagents.isNotEmpty) {
+        for (final agent in subagents.reversed) {
+          entries.add(
+            _TimelineEntry(
+              kind: 'subagent',
+              title: '委派子代理',
+              detail: _displayText(agent['role']),
+              status: _displayText(agent['status']) ?? 'succeeded',
+              result: _displayText(agent['label']),
+              timestamp:
+                  _displayText(agent['endedAt']) ??
+                  _displayText(agent['startedAt']) ??
+                  runStartedAt,
+            ),
+          );
+        }
+        for (final tool in tools.reversed) {
+          entries.add(
+            _TimelineEntry(
+              kind: 'tool',
+              title: _displayText(tool['label']) ?? '工具',
+              status: _displayText(tool['status']) ?? 'running',
+              timestamp: runStartedAt,
+            ),
+          );
+        }
+        continue;
+      }
+      final rawTitle = _displayText(run['title']);
+      final title = (rawTitle != null && rawTitle != '正在处理请求')
+          ? rawTitle
+          : (run['source'] == 'job' ? '定时任务' : '执行记录');
+      entries.add(
+        _TimelineEntry(
+          kind: run['source'] == 'job' ? 'job' : 'run',
+          title: title,
+          status: _displayText(run['status']) ?? 'failed',
+          result: _displayText(run['label']),
+          timestamp: runEndedAt ?? runStartedAt,
         ),
-      ),
-    );
+      );
+    }
+    return entries;
+  }
+
+  List<({String dayLabel, List<_TimelineEntry> entries})> _groupEntriesByDay(
+    List<_TimelineEntry> entries,
+  ) {
+    final groups = <({String dayLabel, List<_TimelineEntry> entries})>[];
+    for (final entry in entries) {
+      final label = _timelineDayLabel(entry.timestamp);
+      if (groups.isEmpty || groups.last.dayLabel != label) {
+        groups.add((dayLabel: label, entries: [entry]));
+      } else {
+        groups.last.entries.add(entry);
+      }
+    }
+    return groups;
   }
 }
 
@@ -693,112 +672,176 @@ class _ApprovalHistoryListState extends State<_ApprovalHistoryList>
   }
 }
 
-class RunStepsList extends StatelessWidget {
-  const RunStepsList({
-    super.key,
-    required this.steps,
-    this.compact = false,
-    this.onOpenApproval,
+class _TimelineEntry {
+  const _TimelineEntry({
+    required this.kind,
+    required this.title,
+    required this.status,
+    this.toolName,
+    this.detail,
+    this.result,
+    this.approvalId,
+    this.timestamp,
   });
 
-  final List<Json> steps;
-  final bool compact;
-  final ValueChanged<String>? onOpenApproval;
+  final String kind;
+  final String? toolName;
+  final String title;
+  final String? detail;
+  final String status;
+  final String? result;
+  final String? approvalId;
+  final String? timestamp;
+
+  _TimelineEntry copyWith({
+    String? status,
+    String? result,
+    String? approvalId,
+    String? timestamp,
+  }) => _TimelineEntry(
+    kind: kind,
+    toolName: toolName,
+    title: title,
+    detail: detail,
+    status: status ?? this.status,
+    result: result ?? this.result,
+    approvalId: approvalId ?? this.approvalId,
+    timestamp: timestamp ?? this.timestamp,
+  );
+}
+
+class _TimelineItemRow extends StatelessWidget {
+  const _TimelineItemRow({
+    required this.entry,
+    required this.isFirst,
+    required this.isLast,
+    required this.onOpenApproval,
+  });
+
+  final _TimelineEntry entry;
+  final bool isFirst;
+  final bool isLast;
+  final ValueChanged<String> onOpenApproval;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < steps.length; i++)
-          _buildStep(context, theme, colors, steps[i], i == steps.length - 1),
-      ],
-    );
-  }
-
-  Widget _buildStep(
-    BuildContext context,
-    ThemeData theme,
-    ColorScheme colors,
-    Json step,
-    bool isLast,
-  ) {
-    final kind = step['kind'] as String? ?? 'tool';
-    final status = step['status'] as String?;
-    final title = _displayText(step['title']) ?? '执行步骤';
-    final detail = _displayText(step['detail']);
-    final result = _displayText(step['result']);
-    final approvalId = _displayText(step['approvalId']);
-    final statusColor = switch (status) {
-      'waiting_approval' => colors.primary,
+    final dotColor = switch (entry.status) {
+      'running' || 'waiting_approval' => colors.primary,
       'failed' || 'denied' || 'expired' => colors.error,
-      'succeeded' => colors.tertiary,
+      'succeeded' || 'completed' => colors.tertiary,
       _ => colors.onSurfaceVariant,
     };
-    final icon = switch (kind) {
-      'approval' => Icons.fact_check_outlined,
-      'file_commit' => Icons.save_outlined,
-      'subagent' => Icons.account_tree_outlined,
-      _ => Icons.build_outlined,
-    };
-    final row = Padding(
-      padding: EdgeInsets.symmetric(vertical: compact ? 5 : 6, horizontal: 4),
-      child: Row(
+    final activeDot =
+        entry.status == 'running' || entry.status == 'waiting_approval';
+    final statusText = executionStatus(entry.status);
+    final subtitle = entry.result != null && entry.result != statusText
+        ? '$statusText · ${entry.result}'
+        : statusText;
+    final timeText = _timelineClock(entry.timestamp);
+    final titleText = entry.detail != null
+        ? '${entry.title} · ${entry.detail}'
+        : entry.title;
+    final content = Padding(
+      padding: EdgeInsets.fromLTRB(4, 2, 4, isLast ? 6 : 16),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(icon, size: compact ? 15 : 17, color: statusColor),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  detail != null ? '$title · $detail' : title,
-                  style: compact
-                      ? theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSurface,
-                        )
-                      : theme.textTheme.bodyMedium,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  titleText,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                Text(
-                  [
-                    executionStatus(status),
-                    ?result,
-                  ].join(' · '),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+              ),
+              if (timeText != null || entry.approvalId != null) ...[
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (timeText != null)
+                      Text(
+                        timeText,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    if (entry.approvalId != null)
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: colors.onSurfaceVariant,
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color:
+                  entry.status == 'failed' ||
+                      entry.status == 'denied' ||
+                      entry.status == 'expired'
+                  ? colors.error
+                  : colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                Container(
+                  width: 1.5,
+                  height: 6,
+                  color: isFirst ? Colors.transparent : colors.outlineVariant,
+                ),
+                Container(
+                  width: activeDot ? 11 : 9,
+                  height: activeDot ? 11 : 9,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: activeDot ? colors.surface : dotColor,
+                    border: activeDot
+                        ? Border.all(color: dotColor, width: 2.5)
+                        : null,
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    color: isLast ? Colors.transparent : colors.outlineVariant,
                   ),
                 ),
               ],
             ),
           ),
-          if (approvalId != null && onOpenApproval != null)
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: colors.onSurfaceVariant,
-            ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: entry.approvalId != null
+                ? InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => onOpenApproval(entry.approvalId!),
+                    child: content,
+                  )
+                : content,
+          ),
         ],
       ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (approvalId != null && onOpenApproval != null)
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => onOpenApproval!(approvalId),
-            child: row,
-          )
-        else
-          row,
-        if (!isLast) Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.5)),
-      ],
     );
   }
 }
@@ -806,64 +849,26 @@ class RunStepsList extends StatelessWidget {
 String? _displayText(Object? value) =>
     value is String && value.isNotEmpty ? value : null;
 
-String? _summarizeRunSteps(List<Json> steps) {
-  if (steps.isEmpty) return null;
-  final kept = <(String? kind, String? toolName, String title, String? detail, String? suffix)>[];
-  for (final step in steps) {
-    final kind = step['kind'] as String?;
-    final toolName = step['toolName'] as String?;
-    final title = (_displayText(step['title']) ?? '执行步骤').trim();
-    final detail = _displayText(step['detail'])?.trim();
-    final status = step['status'] as String?;
-    if (kind == 'file_commit' && kept.isNotEmpty) {
-      final prev = kept.last;
-      final matchesPrevFileTool =
-          prev.$1 == 'tool' &&
-          (prev.$2 == 'write' ||
-              prev.$2 == 'edit' ||
-              prev.$3 == '写入文件' ||
-              prev.$3 == '编辑文件') &&
-          prev.$4 == detail;
-      if (matchesPrevFileTool) {
-        if (status == 'denied') {
-          kept[kept.length - 1] = (prev.$1, prev.$2, prev.$3, prev.$4, '已拒绝');
-        } else if (status == 'failed') {
-          kept[kept.length - 1] = (prev.$1, prev.$2, prev.$3, prev.$4, '写入失败');
-        }
-        continue;
-      }
-    }
-    final suffix = switch (status) {
-      'denied' => '已拒绝',
-      'expired' => '已过期',
-      'failed' => '失败',
-      'cancelled' => '已取消',
-      _ => null,
-    };
-    kept.add((kind, toolName, title, detail, suffix));
-  }
-  if (kept.isEmpty) return null;
-  final labels = kept.take(3).map((entry) {
-    final base = entry.$4 != null ? '${entry.$3}（${entry.$4}）' : entry.$3;
-    return entry.$5 != null ? '$base·${entry.$5}' : base;
-  }).toList();
-  final joined = labels.join(' → ');
-  return kept.length > 3 ? '$joined · 共 ${kept.length} 步' : joined;
+String _timelineDayLabel(Object? raw) {
+  if (raw is! String || raw.isEmpty) return '较早记录';
+  final parsed = DateTime.tryParse(raw)?.toLocal();
+  if (parsed == null) return '较早记录';
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(parsed.year, parsed.month, parsed.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return '今天';
+  if (diff == 1) return '昨天';
+  if (parsed.year == now.year) return '${parsed.month}月${parsed.day}日';
+  return '${parsed.year}年${parsed.month}月${parsed.day}日';
 }
 
-String? _formatRunTime(Object? raw) {
+String? _timelineClock(Object? raw) {
   if (raw is! String || raw.isEmpty) return null;
   final parsed = DateTime.tryParse(raw)?.toLocal();
   if (parsed == null) return null;
-  final now = DateTime.now();
   String two(int value) => value.toString().padLeft(2, '0');
-  final hm = '${two(parsed.hour)}:${two(parsed.minute)}';
-  if (parsed.year == now.year &&
-      parsed.month == now.month &&
-      parsed.day == now.day) {
-    return hm;
-  }
-  return '${two(parsed.month)}-${two(parsed.day)} $hm';
+  return '${two(parsed.hour)}:${two(parsed.minute)}';
 }
 
 String executionStatus(Object? status) => switch (status) {
