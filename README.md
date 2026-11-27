@@ -24,7 +24,7 @@
 
 ### 设置
 
-底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。首页保留底栏，可直接切回「聊天」。点「外观」「服务器连接」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页。
+底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。在竖屏或窄窗口时，底栏保留并可直接切回「聊天」，点「外观」「服务器连接」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页；在横屏大屏（例如平板横屏）下，导航自动切换到屏幕右侧竖排，释放纵向空间，左侧会话列表支持一键常驻或收起，「设置」也会切换为左目录、右详情的双栏视图。
 
 ### 外观与主题
 
@@ -109,7 +109,7 @@ In the drawer, open **更多操作** (More actions) next to a topic session to r
 
 ### Settings
 
-Open **设置** (Settings) from the bottom bar or the chat drawer. Both open the same Settings home, where you can use the bottom bar to switch back to **聊天** (Chat). Open **外观** (Appearance), **服务器连接** (Server connection), **短信同步** (SMS sync), or **应用更新** (App updates) from the list. Back returns to Settings home.
+Open **设置** (Settings) from the bottom bar or the chat drawer. In portrait or narrow windows, you can use the bottom bar to switch back to **聊天** (Chat) and open **外观** (Appearance), **服务器连接** (Server connection), **短信同步** (SMS sync), or **应用更新** (App updates) from the list. In landscape wide-screen layouts such as tablets, navigation moves to a vertical rail on the right to free vertical space, the session list becomes a collapsible left sidebar, and **设置** renders as a master-detail split pane.
 
 ### Appearance and theme mode
 

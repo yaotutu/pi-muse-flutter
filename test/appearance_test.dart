@@ -132,6 +132,10 @@ void main() {
   testWidgets(
     'settings can change palette and disable auto theme switching without losing chat state',
     (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       String? stored;
       String? storedMode;
       final settings = AppearanceSettings(

@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'adaptive_layout.dart';
 import 'api.dart';
 import 'appearance.dart';
 import 'appearance_page.dart';
@@ -39,11 +40,40 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
+enum _SettingsSection { appearance, mcp, subagents, smsSync, updates }
+
 class _ChatPageState extends State<ChatPage> {
+  static const _destinations = [
+    WorkspaceDestination(
+      icon: Icon(Icons.chat_bubble_outline),
+      selectedIcon: Icon(Icons.chat_bubble),
+      label: '聊天',
+    ),
+    // 待办和新闻先按设计稿保留位置，迁移业务后再启用。
+    WorkspaceDestination(
+      icon: Icon(Icons.task_alt),
+      label: '待办',
+      enabled: false,
+    ),
+    WorkspaceDestination(
+      icon: Icon(Icons.newspaper_outlined),
+      label: '新闻',
+      enabled: false,
+    ),
+    WorkspaceDestination(
+      icon: Icon(Icons.settings_outlined),
+      selectedIcon: Icon(Icons.settings),
+      label: '设置',
+    ),
+  ];
+
   final _composer = TextEditingController();
   final _focus = FocusNode();
   final _position = PageStorageBucket();
+  final _contentKey = GlobalKey();
   bool _settingsSelected = false;
+  bool _sidebarPinned = true;
+  _SettingsSection _settingsSection = _SettingsSection.appearance;
   ChatController get _chat => widget.chat;
 
   @override
@@ -71,105 +101,103 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
-  Widget _buildDrawer(BuildContext context) {
-    final scaffold = Scaffold.of(context);
+  Widget _buildDrawer(BuildContext context) => Drawer(
+    semanticLabel: '侧边导航',
+    child: SafeArea(child: _buildSessionPanel(context, inDrawer: true)),
+  );
+
+  Widget _buildSessionPanel(BuildContext context, {required bool inDrawer}) {
     final colors = Theme.of(context).colorScheme;
-    return Drawer(
-      semanticLabel: '侧边导航',
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
-                child: FilledButton.tonalIcon(
-                  onPressed: _chat.synchronized
-                      ? () async {
-                          final created = await showDialog<bool>(
-                            context: context,
-                            builder: (_) => _NewSessionDialog(chat: _chat),
-                          );
-                          if (created == true && scaffold.mounted) {
-                            scaffold.closeDrawer();
-                          }
-                        }
-                      : null,
-                  icon: const Icon(Icons.add),
-                  label: const Text('新建会话'),
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    if (_chat.directoryError case final String error)
-                      ListTile(
-                        title: Text(error),
-                        onTap: _chat.refreshDirectory,
-                      ),
-                    for (final session in _chat.sessions)
-                      ListTile(
-                        key: ValueKey(session.id),
-                        shape: const StadiumBorder(),
-                        title: Text(
-                          session.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        leading: Icon(
-                          session.id == mainSession
-                              ? Icons.home_outlined
-                              : Icons.chat_bubble_outline,
-                        ),
-                        selected: session.id == _chat.activeId,
-                        selectedColor: colors.onSecondaryContainer,
-                        selectedTileColor: colors.secondaryContainer,
-                        trailing: session.id == mainSession
-                            ? null
-                            : SessionManagementMenu(
-                                chat: _chat,
-                                session: session,
-                              ),
-                        onTap: () {
-                          if (_chat.sessionEntry(session.id) == null) return;
-                          _chat.select(session.id);
-                          scaffold.closeDrawer();
-                        },
-                      ),
-                  ],
-                ),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.folder_outlined),
-                title: const Text('工作区文件'),
-                enabled: !_chat.expired,
-                onTap: _chat.expired
-                    ? null
-                    : () {
-                        scaffold.closeDrawer();
-                        Navigator.of(context).push<void>(
-                          MaterialPageRoute(
-                            builder: (_) => WorkspaceFilesPage(
-                              files: WorkspaceFiles(_chat.api),
-                            ),
-                          ),
-                        );
-                      },
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('设置'),
-                onTap: () {
-                  scaffold.closeDrawer();
-                  _selectDestination(3);
-                },
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+            child: FilledButton.tonalIcon(
+              onPressed: _chat.synchronized
+                  ? () async {
+                      final created = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => _NewSessionDialog(chat: _chat),
+                      );
+                      if (created == true && inDrawer && context.mounted) {
+                        AdaptiveWorkspaceShell.closeDrawer(context);
+                      }
+                    }
+                  : null,
+              icon: const Icon(Icons.add),
+              label: const Text('新建会话'),
+            ),
           ),
-        ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                if (_chat.directoryError case final String error)
+                  ListTile(title: Text(error), onTap: _chat.refreshDirectory),
+                for (final session in _chat.sessions)
+                  ListTile(
+                    key: ValueKey(session.id),
+                    shape: const StadiumBorder(),
+                    title: Text(
+                      session.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    leading: Icon(
+                      session.id == mainSession
+                          ? Icons.home_outlined
+                          : Icons.chat_bubble_outline,
+                    ),
+                    selected: session.id == _chat.activeId,
+                    selectedColor: colors.onSecondaryContainer,
+                    selectedTileColor: colors.secondaryContainer,
+                    trailing: session.id == mainSession
+                        ? null
+                        : SessionManagementMenu(chat: _chat, session: session),
+                    onTap: () {
+                      if (_chat.sessionEntry(session.id) == null) return;
+                      _chat.select(session.id);
+                      if (inDrawer) {
+                        AdaptiveWorkspaceShell.closeDrawer(context);
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text('工作区文件'),
+            enabled: !_chat.expired,
+            onTap: _chat.expired
+                ? null
+                : () {
+                    if (inDrawer) {
+                      AdaptiveWorkspaceShell.closeDrawer(context);
+                    }
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => WorkspaceFilesPage(
+                          files: WorkspaceFiles(_chat.api),
+                        ),
+                      ),
+                    );
+                  },
+          ),
+          if (inDrawer)
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('设置'),
+              onTap: () {
+                AdaptiveWorkspaceShell.closeDrawer(context);
+                _selectDestination(3);
+              },
+            ),
+        ],
       ),
     );
   }
@@ -181,90 +209,158 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _settingsSelected = showSettings);
   }
 
-  Widget _settingsHome(Widget navigation) => Scaffold(
-    appBar: AppBar(automaticallyImplyLeading: false, title: const Text('设置')),
-    body: SafeArea(
-      top: false,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.palette_outlined),
-                title: const Text('外观'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => AppearancePage(settings: widget.appearance),
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.dns_outlined),
-                title: const Text('服务器连接'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: widget.onConnection,
-              ),
-              ListTile(
-                leading: const Icon(Icons.extension_outlined),
-                title: const Text('MCP 服务'),
-                enabled: !_chat.expired,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _chat.expired
-                    ? null
-                    : () => Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) => McpPage(api: _chat.api),
-                        ),
-                      ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.smart_toy_outlined),
-                title: const Text('Subagent'),
-                enabled: !_chat.expired,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _chat.expired
-                    ? null
-                    : () => Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) => SubagentsPage(api: _chat.api),
-                        ),
-                      ),
-              ),
-              if (SmsSync.supported)
-                ListTile(
-                  leading: const Icon(Icons.sms_outlined),
-                  title: const Text('短信同步'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => SmsSyncPage(
-                        api: _chat.api,
-                        connectionUsesHttp: widget.connectionUsesHttp,
-                      ),
-                    ),
-                  ),
-                ),
-              if (widget.updates case final updates?)
-                ListTile(
-                  leading: const Icon(Icons.system_update_outlined),
-                  title: const Text('应用更新'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => AppUpdateSheet(controller: updates),
-                    ),
-                  ),
-                ),
-            ],
+  _SettingsSection _resolvedSettingsSection() {
+    if ((_settingsSection == _SettingsSection.mcp ||
+            _settingsSection == _SettingsSection.subagents) &&
+        _chat.expired) {
+      return _SettingsSection.appearance;
+    }
+    if (_settingsSection == _SettingsSection.smsSync && !SmsSync.supported) {
+      return _SettingsSection.appearance;
+    }
+    if (_settingsSection == _SettingsSection.updates && widget.updates == null) {
+      return _SettingsSection.appearance;
+    }
+    return _settingsSection;
+  }
+
+  Widget _buildSettingsDetail(_SettingsSection section) => KeyedSubtree(
+    key: ValueKey(section),
+    child: switch (section) {
+      _SettingsSection.appearance => AppearancePage(settings: widget.appearance),
+      _SettingsSection.mcp => McpPage(api: _chat.api),
+      _SettingsSection.subagents => SubagentsPage(api: _chat.api),
+      _SettingsSection.smsSync => SmsSyncPage(
+        api: _chat.api,
+        connectionUsesHttp: widget.connectionUsesHttp,
+      ),
+      _SettingsSection.updates => AppUpdateSheet(controller: widget.updates!),
+    },
+  );
+
+  Widget _settingsHome(WorkspaceLayout layout) {
+    final colors = Theme.of(context).colorScheme;
+    final split = layout.useSplitPane;
+    final activeSection = _resolvedSettingsSection();
+    void openSection(_SettingsSection section, Widget Function() builder) {
+      if (split) {
+        setState(() => _settingsSection = section);
+      } else {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => builder()),
+        );
+      }
+    }
+
+    final menuList = ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('外观'),
+          selected: split && activeSection == _SettingsSection.appearance,
+          selectedColor: colors.onSecondaryContainer,
+          selectedTileColor: colors.secondaryContainer,
+          trailing: split ? null : const Icon(Icons.chevron_right),
+          onTap: () => openSection(
+            _SettingsSection.appearance,
+            () => AppearancePage(settings: widget.appearance),
           ),
         ),
+        ListTile(
+          leading: const Icon(Icons.dns_outlined),
+          title: const Text('服务器连接'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: widget.onConnection,
+        ),
+        ListTile(
+          leading: const Icon(Icons.extension_outlined),
+          title: const Text('MCP 服务'),
+          enabled: !_chat.expired,
+          selected: split && activeSection == _SettingsSection.mcp,
+          selectedColor: colors.onSecondaryContainer,
+          selectedTileColor: colors.secondaryContainer,
+          trailing: split ? null : const Icon(Icons.chevron_right),
+          onTap: _chat.expired
+              ? null
+              : () => openSection(
+                  _SettingsSection.mcp,
+                  () => McpPage(api: _chat.api),
+                ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.smart_toy_outlined),
+          title: const Text('Subagent'),
+          enabled: !_chat.expired,
+          selected: split && activeSection == _SettingsSection.subagents,
+          selectedColor: colors.onSecondaryContainer,
+          selectedTileColor: colors.secondaryContainer,
+          trailing: split ? null : const Icon(Icons.chevron_right),
+          onTap: _chat.expired
+              ? null
+              : () => openSection(
+                  _SettingsSection.subagents,
+                  () => SubagentsPage(api: _chat.api),
+                ),
+        ),
+        if (SmsSync.supported)
+          ListTile(
+            leading: const Icon(Icons.sms_outlined),
+            title: const Text('短信同步'),
+            selected: split && activeSection == _SettingsSection.smsSync,
+            selectedColor: colors.onSecondaryContainer,
+            selectedTileColor: colors.secondaryContainer,
+            trailing: split ? null : const Icon(Icons.chevron_right),
+            onTap: () => openSection(
+              _SettingsSection.smsSync,
+              () => SmsSyncPage(
+                api: _chat.api,
+                connectionUsesHttp: widget.connectionUsesHttp,
+              ),
+            ),
+          ),
+        if (widget.updates case final updates?)
+          ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: const Text('应用更新'),
+            selected: split && activeSection == _SettingsSection.updates,
+            selectedColor: colors.onSecondaryContainer,
+            selectedTileColor: colors.secondaryContainer,
+            trailing: split ? null : const Icon(Icons.chevron_right),
+            onTap: () => openSection(
+              _SettingsSection.updates,
+              () => AppUpdateSheet(controller: updates),
+            ),
+          ),
+      ],
+    );
+
+    final master = Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        toolbarHeight: layout.toolbarHeight,
+        title: const Text('设置'),
       ),
-    ),
-    bottomNavigationBar: navigation,
-  );
+      body: SafeArea(
+        top: false,
+        child: split
+            ? menuList
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: menuList,
+                ),
+              ),
+      ),
+    );
+
+    return AdaptiveListDetail(
+      split: split,
+      masterWidth: layout.masterPaneWidth,
+      master: master,
+      detail: _buildSettingsDetail(activeSection),
+    );
+  }
 
   Future<void> _openApproval() async {
     _focus.unfocus();
@@ -432,17 +528,10 @@ class _ChatPageState extends State<ChatPage> {
         ];
         final footerCount = footers.length;
         final activity = hasApproval ? null : _chat.activityLabel;
-        final navigation = _WorkspaceNavigationBar(
-          selectedIndex: _settingsSelected ? 3 : 0,
-          onDestinationSelected: _selectDestination,
-        );
+        final layout = WorkspaceLayout.of(context);
         final chatView = Scaffold(
-          drawer: Builder(builder: _buildDrawer),
-          onDrawerChanged: (open) {
-            // 抽屉只改变当前路由的本地历史，主动同步 Android 的返回处理状态。
-            NavigationNotification(canHandlePop: open).dispatch(context);
-          },
           appBar: AppBar(
+            toolbarHeight: layout.toolbarHeight,
             backgroundColor: colors.surface,
             foregroundColor: colors.onSurface,
             surfaceTintColor: Colors.transparent,
@@ -451,16 +540,27 @@ class _ChatPageState extends State<ChatPage> {
             scrolledUnderElevation: 1,
             titleSpacing: 0,
             leadingWidth: 76,
-            leading: Builder(
-              builder: (context) => IconButton(
-                onPressed: () {
-                  _focus.unfocus();
-                  Scaffold.of(context).openDrawer();
-                },
-                tooltip: '打开导航菜单',
-                icon: const Icon(Icons.menu),
-              ),
-            ),
+            leading: layout.canPinSidebar
+                ? IconButton(
+                    onPressed: () {
+                      _focus.unfocus();
+                      setState(() => _sidebarPinned = !_sidebarPinned);
+                    },
+                    tooltip: _sidebarPinned ? '收起会话列表' : '展开会话列表',
+                    icon: Icon(
+                      _sidebarPinned ? Icons.menu_open : Icons.menu,
+                    ),
+                  )
+                : Builder(
+                    builder: (context) => IconButton(
+                      onPressed: () {
+                        _focus.unfocus();
+                        AdaptiveWorkspaceShell.openDrawer(context);
+                      },
+                      tooltip: '打开导航菜单',
+                      icon: const Icon(Icons.menu),
+                    ),
+                  ),
             title: _ChatTitle(title: title, activity: activity),
             centerTitle: true,
             actions: [
@@ -480,7 +580,6 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ],
           ),
-          bottomNavigationBar: compact ? null : navigation,
           body: SafeArea(
             top: false,
             child: Center(
@@ -924,15 +1023,40 @@ class _ChatPageState extends State<ChatPage> {
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop && _settingsSelected) _selectDestination(0);
           },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Offstage(
-                offstage: _settingsSelected,
-                child: TickerMode(enabled: !_settingsSelected, child: chatView),
+          child: AdaptiveWorkspaceShell(
+            layout: layout,
+            selectedIndex: _settingsSelected ? 3 : 0,
+            onDestinationSelected: _selectDestination,
+            destinations: _destinations,
+            drawer: _settingsSelected ? null : Builder(builder: _buildDrawer),
+            onDrawerChanged: (open) {
+              // 抽屉只改变当前路由的本地历史，主动同步 Android 的返回处理状态。
+              NavigationNotification(canHandlePop: open).dispatch(context);
+            },
+            sidebar: _settingsSelected
+                ? null
+                : Builder(
+                    builder: (context) =>
+                        _buildSessionPanel(context, inDrawer: false),
+                  ),
+            sidebarVisible: !_settingsSelected && _sidebarPinned,
+            hideBottomBar: !_settingsSelected && compact,
+            body: KeyedSubtree(
+              key: _contentKey,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: _settingsSelected,
+                    child: TickerMode(
+                      enabled: !_settingsSelected,
+                      child: chatView,
+                    ),
+                  ),
+                  if (_settingsSelected) _settingsHome(layout),
+                ],
               ),
-              if (_settingsSelected) _settingsHome(navigation),
-            ],
+            ),
           ),
         );
       },
@@ -1106,89 +1230,6 @@ class _ChatDateLabel extends StatelessWidget {
                 color: colors.onSurfaceVariant,
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkspaceNavigationBar extends StatelessWidget {
-  const _WorkspaceNavigationBar({
-    required this.selectedIndex,
-    required this.onDestinationSelected,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onDestinationSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final bar = NavigationBarTheme(
-      data: NavigationBarThemeData(
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          final selected = states.contains(WidgetState.selected);
-          return theme.textTheme.labelMedium?.copyWith(
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? colors.primary : colors.onSurfaceVariant,
-          );
-        }),
-        iconTheme: WidgetStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: states.contains(WidgetState.selected)
-                ? colors.onSecondaryContainer
-                : colors.onSurfaceVariant,
-            size: 24,
-          ),
-        ),
-      ),
-      child: NavigationBar(
-        height: 64,
-        elevation: 0,
-        backgroundColor: colors.surface,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: colors.secondaryContainer,
-        labelPadding: const EdgeInsets.only(top: 2),
-        selectedIndex: selectedIndex,
-        onDestinationSelected: onDestinationSelected,
-        // 待办和新闻先按设计稿保留位置，迁移业务后再启用。
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: '聊天',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.task_alt),
-            label: '待办',
-            enabled: false,
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.newspaper_outlined),
-            label: '新闻',
-            enabled: false,
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
-          ),
-        ],
-      ),
-    );
-    return Material(
-      color: colors.surface,
-      elevation: 1,
-      shadowColor: colors.shadow.withValues(alpha: 0.13),
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 768),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: bar,
           ),
         ),
       ),
