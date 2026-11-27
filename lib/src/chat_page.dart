@@ -26,6 +26,7 @@ class ChatPage extends StatefulWidget {
     required this.chat,
     required this.appearance,
     required this.onConnection,
+    this.connectionBuilder,
     this.connectionUsesHttp = false,
     this.updates,
   });
@@ -33,6 +34,7 @@ class ChatPage extends StatefulWidget {
   final ChatController chat;
   final AppearanceSettings appearance;
   final VoidCallback onConnection;
+  final WidgetBuilder? connectionBuilder;
   final bool connectionUsesHttp;
   final AppUpdateController? updates;
 
@@ -40,7 +42,14 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-enum _SettingsSection { appearance, mcp, subagents, smsSync, updates }
+enum _SettingsSection {
+  appearance,
+  connection,
+  mcp,
+  subagents,
+  smsSync,
+  updates,
+}
 
 class _ChatPageState extends State<ChatPage> {
   static const _destinations = [
@@ -210,6 +219,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   _SettingsSection _resolvedSettingsSection() {
+    if (_settingsSection == _SettingsSection.connection &&
+        widget.connectionBuilder == null) {
+      return _SettingsSection.appearance;
+    }
     if ((_settingsSection == _SettingsSection.mcp ||
             _settingsSection == _SettingsSection.subagents) &&
         _chat.expired) {
@@ -228,6 +241,7 @@ class _ChatPageState extends State<ChatPage> {
     key: ValueKey(section),
     child: switch (section) {
       _SettingsSection.appearance => AppearancePage(settings: widget.appearance),
+      _SettingsSection.connection => Builder(builder: widget.connectionBuilder!),
       _SettingsSection.mcp => McpPage(api: _chat.api),
       _SettingsSection.subagents => SubagentsPage(api: _chat.api),
       _SettingsSection.smsSync => SmsSyncPage(
@@ -242,6 +256,7 @@ class _ChatPageState extends State<ChatPage> {
     final colors = Theme.of(context).colorScheme;
     final split = layout.useSplitPane;
     final activeSection = _resolvedSettingsSection();
+    final connectionBuilder = widget.connectionBuilder;
     void openSection(_SettingsSection section, Widget Function() builder) {
       if (split) {
         setState(() => _settingsSection = section);
@@ -270,8 +285,21 @@ class _ChatPageState extends State<ChatPage> {
         ListTile(
           leading: const Icon(Icons.dns_outlined),
           title: const Text('服务器连接'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: widget.onConnection,
+          selected:
+              connectionBuilder != null &&
+              split &&
+              activeSection == _SettingsSection.connection,
+          selectedColor: colors.onSecondaryContainer,
+          selectedTileColor: colors.secondaryContainer,
+          trailing: connectionBuilder != null && split
+              ? null
+              : const Icon(Icons.chevron_right),
+          onTap: connectionBuilder == null
+              ? widget.onConnection
+              : () => openSection(
+                  _SettingsSection.connection,
+                  () => Builder(builder: connectionBuilder),
+                ),
         ),
         ListTile(
           leading: const Icon(Icons.extension_outlined),
@@ -756,7 +784,18 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     if (_chat.expired)
                       TextButton(
-                        onPressed: widget.onConnection,
+                        onPressed:
+                            layout.useSplitPane &&
+                                widget.connectionBuilder != null
+                            ? () {
+                                _focus.unfocus();
+                                setState(() {
+                                  _settingsSelected = true;
+                                  _settingsSection =
+                                      _SettingsSection.connection;
+                                });
+                              }
+                            : widget.onConnection,
                         child: const Text('重新登录'),
                       )
                     else if (conversation.submission

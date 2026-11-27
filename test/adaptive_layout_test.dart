@@ -5,6 +5,7 @@ import 'package:pi_muse_flutter/src/api.dart';
 import 'package:pi_muse_flutter/src/appearance.dart';
 import 'package:pi_muse_flutter/src/chat.dart';
 import 'package:pi_muse_flutter/src/chat_page.dart';
+import 'package:pi_muse_flutter/src/connection_page.dart';
 
 void main() {
   test('WorkspaceLayout classifies phone, portrait tablet, split view, and landscape tablet', () {
@@ -45,12 +46,14 @@ void main() {
     ChatController chat,
     AppearanceSettings appearance, {
     VoidCallback? onConnection,
+    WidgetBuilder? connectionBuilder,
   }) => MaterialApp(
     theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
     home: ChatPage(
       key: ObjectKey(chat),
       chat: chat,
       appearance: appearance,
+      connectionBuilder: connectionBuilder,
       onConnection: onConnection ?? () {},
     ),
   );
@@ -190,5 +193,92 @@ void main() {
     await tester.tap(find.text('聊天'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets(
+    'landscape tablet opens ConnectionPage in split-pane settings and defers confirmation until submit',
+    (tester) async {
+      tester.view.physicalSize = const Size(961, 580);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final (chat, appearance) = createDeps();
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+
+      var allowConnect = false;
+      var beforeCalls = 0;
+      Uri? submittedUri;
+      String? submittedKey;
+
+      await tester.pumpWidget(
+        buildApp(
+          chat,
+          appearance,
+          connectionBuilder: (_) => ConnectionPage(
+            settingsMode: true,
+            address: Uri.parse('http://localhost:12330'),
+            onBeforeConnect: (_) async {
+              beforeCalls += 1;
+              return allowConnect;
+            },
+            onConnect: (uri, key) async {
+              submittedUri = uri;
+              submittedKey = key;
+            },
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('服务器连接'));
+      await tester.pumpAndSettle();
+
+      // 保持设置双栏与右侧导航栏，不提前弹窗阻断，样式统一为顶部卡片。
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.text('服务器连接'), findsNWidgets(2));
+      expect(find.text('当前连接'), findsOneWidget);
+      expect(find.text('保存并连接'), findsOneWidget);
+      expect(find.text('Pi Muse'), findsNothing);
+      expect(beforeCalls, 0);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, '服务器地址'),
+        'http://127.0.0.1:12331',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, '访问密钥'),
+        'secret-key',
+      );
+      await tester.ensureVisible(find.text('保存并连接'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存并连接'));
+      await tester.pumpAndSettle();
+      expect(beforeCalls, 1);
+      expect(submittedUri, isNull);
+
+      allowConnect = true;
+      await tester.tap(find.text('保存并连接'));
+      await tester.pumpAndSettle();
+      expect(beforeCalls, 2);
+      expect(submittedUri, Uri.parse('http://127.0.0.1:12331'));
+      expect(submittedKey, 'secret-key');
+    },
+  );
+
+  testWidgets('initial unconnected ConnectionPage keeps centered welcome layout', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ConnectionPage(onConnect: (_, _) async {}),
+      ),
+    );
+    expect(find.text('Pi Muse'), findsOneWidget);
+    expect(find.text('连接你的助手服务器'), findsOneWidget);
+    expect(find.text('连接'), findsOneWidget);
   });
 }

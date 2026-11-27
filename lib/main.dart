@@ -11,7 +11,10 @@ import 'src/app_update.dart';
 import 'src/app_update_sheet.dart';
 import 'src/chat.dart';
 import 'src/chat_page.dart';
+import 'src/connection_page.dart';
 import 'src/sms_sync.dart';
+
+export 'src/connection_page.dart';
 
 void main() => runApp(const PiMuseApp());
 
@@ -175,6 +178,44 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
     builder: (_, _) => _buildApp(),
   );
 
+  Future<bool> _confirmReconnect(
+    BuildContext dialogContext,
+    ChatController chat,
+  ) async {
+    final hasRun = chat.conversations.values.any(
+      (conversation) => conversation.submission?.running == true,
+    );
+    final hasDraft = chat.conversations.values.any(
+      (conversation) =>
+          conversation.draft.isNotEmpty ||
+          conversation.draftAttachments.isNotEmpty ||
+          conversation.submission != null,
+    );
+    if (!hasRun && !hasDraft) return true;
+    final proceed = await showDialog<bool>(
+      context: dialogContext,
+      builder: (context) => AlertDialog(
+        title: const Text('更换服务器连接？'),
+        content: Text(
+          hasRun
+              ? '保存新连接会停止本机正在进行的回复，并清空本机的会话草稿。'
+              : '保存新连接会清空本机的会话草稿，不会删除服务器上的记录。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('继续'),
+          ),
+        ],
+      ),
+    );
+    return proceed == true;
+  }
+
   Widget _buildApp() {
     final chat = _chat;
     final palette = _appearance.palette;
@@ -199,200 +240,25 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
           if (chat == null) {
             return ConnectionPage(onConnect: _connect, notice: _storageError);
           }
+          Widget buildSettingsConnection() => ConnectionPage(
+            settingsMode: true,
+            address: _address,
+            onBeforeConnect: (dialogContext) =>
+                _confirmReconnect(dialogContext, chat),
+            onConnect: _connect,
+          );
           return ChatPage(
             key: ObjectKey(chat),
             chat: chat,
             appearance: _appearance,
             connectionUsesHttp: _address?.scheme == 'http',
             updates: _updates,
-            onConnection: () async {
-              final hasRun = chat.conversations.values.any(
-                (conversation) => conversation.submission?.running == true,
-              );
-              final hasDraft = chat.conversations.values.any(
-                (conversation) =>
-                    conversation.draft.isNotEmpty ||
-                    conversation.draftAttachments.isNotEmpty ||
-                    conversation.submission != null,
-              );
-              if (hasRun || hasDraft) {
-                final proceed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('更换服务器连接？'),
-                    content: Text(
-                      hasRun
-                          ? '保存新连接会停止本机正在进行的回复，并清空本机的会话草稿。'
-                          : '保存新连接会清空本机的会话草稿，不会删除服务器上的记录。',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('返回'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('继续'),
-                      ),
-                    ],
-                  ),
-                );
-                if (proceed != true || !context.mounted) return;
-              }
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ConnectionPage(address: _address, onConnect: _connect),
-                ),
-              );
-            },
+            connectionBuilder: (_) => buildSettingsConnection(),
+            onConnection: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => buildSettingsConnection()),
+            ),
           );
         },
-      ),
-    );
-  }
-}
-
-class ConnectionPage extends StatefulWidget {
-  const ConnectionPage({
-    super.key,
-    required this.onConnect,
-    this.address,
-    this.notice,
-  });
-
-  final Future<void> Function(Uri address, String key) onConnect;
-  final Uri? address;
-  final String? notice;
-
-  @override
-  State<ConnectionPage> createState() => _ConnectionPageState();
-}
-
-class _ConnectionPageState extends State<ConnectionPage> {
-  late final _address = TextEditingController(text: widget.address?.toString());
-  final _key = TextEditingController();
-  String? _error;
-  bool _busy = false;
-
-  Future<void> _submit() async {
-    if (_busy) return;
-    final navigator = Navigator.of(context);
-    final closeAfter = navigator.canPop();
-    final Uri address;
-    try {
-      address = parseServerAddress(_address.text);
-    } on FormatException {
-      setState(() => _error = '请输入完整的 HTTP 或 HTTPS 服务器地址，可带端口');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await widget.onConnect(address, _key.text.trim());
-      if (mounted) {
-        _key.clear();
-        if (closeAfter) navigator.pop();
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = error is ApiException && error.status == 401
-              ? '访问密钥不正确，请核对后重试'
-              : '连接未保存，请检查服务器地址和网络',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _address.dispose();
-    _key.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final canPop = Navigator.of(context).canPop();
-    return PopScope(
-      canPop: !_busy,
-      child: Scaffold(
-        appBar: canPop ? AppBar(title: const Text('服务器连接')) : null,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Pi Muse',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '连接你的助手服务器',
-                      style: theme.textTheme.bodyLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 28),
-                    TextField(
-                      controller: _address,
-                      enabled: !_busy,
-                      keyboardType: TextInputType.url,
-                      textInputAction: TextInputAction.next,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(labelText: '服务器地址'),
-                      autocorrect: false,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _key,
-                      enabled: !_busy,
-                      obscureText: true,
-                      enableSuggestions: false,
-                      autocorrect: false,
-                      onSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(labelText: '访问密钥'),
-                    ),
-                    if (_address.text.trimLeft().startsWith('http://'))
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text(
-                          'HTTP 连接未加密，请在可信网络中使用。'
-                          '同步新短信或导入历史短信时，短信也会通过此连接发送。',
-                        ),
-                      ),
-                    if ((_error ?? widget.notice) case final String message)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          message,
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: Text(_busy ? '正在连接…' : '连接'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
