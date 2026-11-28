@@ -20,7 +20,7 @@ class AgendaMoment {
     this.deviceZone = false,
   });
 
-  /// 展示用的墙上时间，不带时区。
+  /// 展示用的年月日和钟点。用 UTC 承载服务端字段，避免设备夏令时调整钟点。
   final DateTime wallClock;
 
   /// 是否只有日期，没有具体时刻。
@@ -108,7 +108,7 @@ AgendaMoment? parseAgendaMoment(String? value, {String? zoneName}) {
     final parsed = DateTime.tryParse(text);
     if (parsed == null) return null;
     return AgendaMoment(
-      wallClock: DateTime(
+      wallClock: DateTime.utc(
         parsed.year,
         parsed.month,
         parsed.day,
@@ -146,7 +146,7 @@ AgendaMoment? parseAgendaMoment(String? value, {String? zoneName}) {
   }
   if (zoned != null) {
     return AgendaMoment(
-      wallClock: DateTime(
+      wallClock: DateTime.utc(
         zoned.year,
         zoned.month,
         zoned.day,
@@ -181,7 +181,7 @@ DateTime? _wallClock(
 ) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (hour > 23 || minute > 59 || second > 59) return null;
-  final moment = DateTime(year, month, day, hour, minute, second);
+  final moment = DateTime.utc(year, month, day, hour, minute, second);
   // DateTime 会把越界的日期滚动到下个月，这里按原始字段回查一次。
   if (moment.year != year || moment.month != month || moment.day != day) {
     return null;

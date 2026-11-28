@@ -306,14 +306,13 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
       context: context,
       initialTime: const TimeOfDay(hour: 9, minute: 0),
     );
-    if (!mounted) return;
+    if (time == null || !mounted) return;
     final updated = await widget.agenda.addReminder(
       item.id,
       day: day,
-      time: time == null
-          ? null
-          : '${time.hour.toString().padLeft(2, '0')}:'
-                '${time.minute.toString().padLeft(2, '0')}',
+      time:
+          '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}',
     );
     if (!mounted || updated == null) return;
     setState(() => _item = updated);
@@ -335,15 +334,14 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
       context: context,
       initialTime: TimeOfDay.fromDateTime(moment.wallClock),
     );
-    if (!mounted) return;
+    if (time == null || !mounted) return;
     final updated = await widget.agenda.updateReminder(
       item.id,
       reminder.id,
       day: day,
-      time: time == null
-          ? null
-          : '${time.hour.toString().padLeft(2, '0')}:'
-                '${time.minute.toString().padLeft(2, '0')}',
+      time:
+          '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}',
     );
     if (!mounted || updated == null) return;
     setState(() => _item = updated);
@@ -633,11 +631,13 @@ class _ReminderSection extends StatelessWidget {
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            tooltip: '修改提醒',
-                            icon: const Icon(Icons.edit, size: 18),
-                            onPressed: () => onEdit(reminder),
-                          ),
+                          if (reminder.reminderKind ==
+                              AgendaReminderKind.absolute)
+                            IconButton(
+                              tooltip: '修改提醒',
+                              icon: const Icon(Icons.edit, size: 18),
+                              onPressed: () => onEdit(reminder),
+                            ),
                           IconButton(
                             tooltip: '取消提醒',
                             icon: const Icon(Icons.close, size: 18),

@@ -14,7 +14,7 @@ void main() {
       final moment = parseAgendaMoment('2026-03-08');
       expect(moment, isNotNull);
       expect(moment!.dateOnly, isTrue);
-      expect(moment.wallClock, DateTime(2026, 3, 8));
+      expect(moment.wallClock, DateTime.utc(2026, 3, 8));
       expect(moment.hasTime, isFalse);
     });
 
@@ -23,7 +23,7 @@ void main() {
         '2026-03-08T09:30:00+08:00',
         zoneName: 'Asia/Shanghai',
       );
-      expect(moment!.wallClock, DateTime(2026, 3, 8, 9, 30));
+      expect(moment!.wallClock, DateTime.utc(2026, 3, 8, 9, 30));
       expect(moment.hasTime, isTrue);
       expect(moment.offset, const Duration(hours: 8));
       expect(moment.zoneLabel, 'Asia/Shanghai');
@@ -45,7 +45,7 @@ void main() {
         '2026-03-08T01:00:00Z',
         zoneName: 'Asia/Shanghai',
       );
-      expect(moment!.wallClock, DateTime(2026, 3, 8, 9));
+      expect(moment!.wallClock, DateTime.utc(2026, 3, 8, 9));
       expect(moment.zoneLabel, 'Asia/Shanghai');
       expect(moment.instant, DateTime.utc(2026, 3, 8, 1));
     });
@@ -75,6 +75,15 @@ void main() {
       expect(summer?.hour, 9);
       expect(winter?.timeZoneOffset, const Duration(hours: -5));
       expect(summer?.timeZoneOffset, const Duration(hours: -4));
+    });
+
+    test('keeps server clock fields through a device DST gap', () {
+      final sameMoment = ['2026-03-08T02:30:00+08:00', '2026-03-07T18:30:00Z'];
+      for (final stamp in sameMoment) {
+        final moment = parseAgendaMoment(stamp, zoneName: 'Asia/Shanghai')!;
+        expect(moment.wallClock, DateTime.utc(2026, 3, 8, 2, 30));
+        expect(moment.instant, DateTime.utc(2026, 3, 7, 18, 30));
+      }
     });
 
     test('rejects values that are not dates', () {
@@ -125,8 +134,8 @@ void main() {
           },
         ],
       });
-      expect(item.schedule!.moment!.wallClock, DateTime(2026, 3, 8));
-      expect(item.due!.moment!.wallClock, DateTime(2026, 3, 9, 18));
+      expect(item.schedule!.moment!.wallClock, DateTime.utc(2026, 3, 8));
+      expect(item.due!.moment!.wallClock, DateTime.utc(2026, 3, 9, 18));
       expect(item.reminders.single.pending, isTrue);
       expect(item.completed, isFalse);
       expect(item.pinned, isFalse);

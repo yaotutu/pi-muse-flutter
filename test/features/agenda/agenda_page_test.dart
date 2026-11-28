@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pi_muse_flutter/src/app/workspace_page.dart';
+import 'package:pi_muse_flutter/src/features/agenda/agenda.dart';
 import 'package:pi_muse_flutter/src/features/appearance/appearance.dart';
 import 'package:pi_muse_flutter/src/features/chat/chat_controller.dart';
 import 'package:pi_muse_flutter/src/network/api.dart';
@@ -163,4 +164,62 @@ void main() {
     final bar = find.byType(NavigationBar, skipOffstage: false);
     expect(tester.widget<NavigationBar>(bar).selectedIndex, 1);
   });
+
+  testWidgets(
+    'reminder editing preserves relative rules and supports dismissal',
+    (tester) async {
+      tester.view.physicalSize = const Size(780, 950);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final year = DateTime.now().year + 1;
+      final api = AgendaTestApi()
+        ..items = [
+          {
+            'id': 'item',
+            'title': '交报告',
+            'due': {'type': 'time', 'value': '$year-12-01T10:00:00Z'},
+            'reminders': [
+              {
+                'id': 'relative',
+                'kind': 'before_due',
+                'offsetMinutes': 30,
+                'fireAt': '$year-12-01T09:30:00Z',
+                'status': 'pending',
+              },
+              {
+                'id': 'absolute',
+                'kind': 'absolute',
+                'fireAt': '$year-12-01T09:00:00Z',
+                'status': 'pending',
+              },
+            ],
+          },
+        ];
+      final agenda = AgendaController(
+        client: AgendaClient(api),
+        events: const Stream.empty(),
+      );
+      addTearDown(agenda.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AgendaItemPage(agenda: agenda, itemId: 'item'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('取消提醒'), findsNWidgets(2));
+      final edit = find.byTooltip('修改提醒');
+      expect(edit, findsOneWidget);
+      await tester.tap(edit);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(api.agendaWrites, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }
