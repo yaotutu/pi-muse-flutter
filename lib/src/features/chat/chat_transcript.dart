@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../shared/agenda_receipt.dart';
+import 'agenda_receipt_card.dart';
 import 'chat_controller.dart';
 import 'chat_message_view.dart';
 
@@ -12,6 +14,7 @@ class ChatTranscript extends StatefulWidget {
     required this.messages,
     required this.footers,
     required this.onQuote,
+    this.onOpenAgendaItem,
   });
 
   final ChatController chat;
@@ -20,8 +23,23 @@ class ChatTranscript extends StatefulWidget {
   final List<Widget> footers;
   final VoidCallback onQuote;
 
+  /// 打开日程里的某个事项。
+  final AgendaItemOpener? onOpenAgendaItem;
+
   @override
   State<ChatTranscript> createState() => _ChatTranscriptState();
+}
+
+/// 聊天记录的展示项，承载普通消息或事项回执。
+class _TranscriptEntry {
+  const _TranscriptEntry.message(this.message) : receipt = null;
+
+  const _TranscriptEntry.receipt(this.receipt) : message = null;
+
+  final ChatMessage? message;
+  final AgendaReceipt? receipt;
+
+  DateTime? get sentAt => message?.sentAt?.toLocal();
 }
 
 class _ChatTranscriptState extends State<ChatTranscript> {
@@ -44,6 +62,43 @@ class _ChatTranscriptState extends State<ChatTranscript> {
     }
   }
 
+  /// 组装记录里的消息和事项回执。
+  ///
+  /// 历史消息上的回执和运行期间收到的同一份回执按 ID 去重，只保留一张卡片。
+  List<_TranscriptEntry> _entries() {
+    final entries = <_TranscriptEntry>[];
+    final seen = <String>{};
+    for (final message in widget.messages) {
+      final receipt = message.agendaReceipt;
+      if (receipt == null) {
+        entries.add(_TranscriptEntry.message(message));
+      } else if (seen.add(receipt.id)) {
+        entries.add(_TranscriptEntry.receipt(receipt));
+      }
+    }
+    for (final receipt in widget.conversation.liveAgendaReceipts) {
+      if (seen.add(receipt.id)) {
+        entries.add(_TranscriptEntry.receipt(receipt));
+      }
+    }
+    return entries;
+  }
+
+  /// 上一条消息的时间，用于显示日期分隔。
+  DateTime? _previousSentAt(List<_TranscriptEntry> entries, int position) {
+    for (var index = position - 1; index >= 0; index--) {
+      final sentAt = entries[index].sentAt;
+      if (sentAt != null) return sentAt;
+    }
+    return null;
+  }
+
+  VoidCallback? _openAgendaItem(String itemId, {bool time = false}) {
+    final open = widget.onOpenAgendaItem;
+    if (open == null) return null;
+    return () => open(itemId, time);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -53,12 +108,12 @@ class _ChatTranscriptState extends State<ChatTranscript> {
     final feedbackEnabled =
         binding != null && widget.chat.canChangeFeedback(conversation);
     final pending = conversation.submission;
-    final messages = widget.messages;
+    final entries = _entries();
     final footers = widget.footers;
     final footerCount = footers.length;
     return PageStorage(
       bucket: _position,
-      child: messages.isEmpty && footerCount == 0
+      child: entries.isEmpty && footerCount == 0
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -97,19 +152,26 @@ class _ChatTranscriptState extends State<ChatTranscript> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: messages.length + footerCount,
+                  itemCount: entries.length + footerCount,
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     if (index < footerCount) {
                       return footers[index];
                     }
-                    final position =
-                        messages.length - (index - footerCount) - 1;
-                    final message = messages[position];
-                    final sentAt = message.sentAt?.toLocal();
-                    final previous = position == 0
-                        ? null
-                        : messages[position - 1].sentAt?.toLocal();
+                    final position = entries.length - (index - footerCount) - 1;
+                    final entry = entries[position];
+                    final receipt = entry.receipt;
+                    if (receipt != null) {
+                      return AgendaReceiptCard(
+                        key: ValueKey('agenda-receipt-${receipt.id}'),
+                        receipt: receipt,
+                        onOpen: _openAgendaItem(receipt.itemId),
+                        onEditTime: _openAgendaItem(receipt.itemId, time: true),
+                      );
+                    }
+                    final message = entry.message!;
+                    final sentAt = entry.sentAt;
+                    final previous = _previousSentAt(entries, position);
                     final confirmed =
                         pending == null ||
                         (message.id != pending.message.id &&

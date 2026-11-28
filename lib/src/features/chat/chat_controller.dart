@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show StringCharacters;
 
 import '../../network/api.dart';
+import '../../shared/agenda_receipt.dart';
+import '../../shared/workspace_events.dart';
 import 'approval.dart';
 import 'chat_attachment.dart';
 import 'session.dart';
@@ -20,6 +22,9 @@ part 'workspace_flow.dart';
 part 'session_flow.dart';
 part 'draft_flow.dart';
 part 'message_feedback.dart';
+
+/// 打开日程里的某个事项。第二个参数为真时直接定位到时间设置。
+typedef AgendaItemOpener = void Function(String itemId, bool focusTime);
 
 /// 聊天状态控制器。
 ///
@@ -77,6 +82,11 @@ class ChatController extends ChangeNotifier {
 
   /// 工作区快照版本，ready 时递增。
   int get workspaceSnapshot => _workspace.snapshot;
+
+  /// 连接级通知事件。
+  ///
+  /// 每个连接只有一条 `/api/events`，其它功能按事件名订阅同一条流，不另开连接。
+  Stream<WorkspaceEvent> get workspaceEvents => _workspace.events;
 
   /// 当前会话。
   Conversation get active => conversations[activeId]!;

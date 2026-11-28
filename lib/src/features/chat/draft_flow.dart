@@ -161,6 +161,17 @@ class _DraftFlow {
     }
   }
 
+  /// 记录运行过程中推送的事项回执。
+  ///
+  /// 回执只是快照，聊天页据此展示卡片；历史里的同一份回执按 ID 去重。
+  void _recordAgendaReceipt(Conversation conversation, Json data) {
+    final receipt = agendaReceiptFromEvent(data);
+    if (receipt == null) return;
+    if (!chat._owns(conversation)) return;
+    conversation.addAgendaReceipt(receipt);
+    chat._changed();
+  }
+
   /// 断开当前会话挂接的运行流。
   void detachAttachedStream(
     Conversation conversation, {
@@ -226,6 +237,8 @@ class _DraftFlow {
             streamed[id] = updated;
             conversation.liveReplies[id] = updated;
             chat._changed();
+          case 'CUSTOM':
+            _recordAgendaReceipt(conversation, data);
           case 'RUN_FINISHED':
           case 'RUN_ERROR':
             break;
@@ -395,6 +408,8 @@ class _DraftFlow {
               ifAbsent: () => delta,
             );
             chat._changed();
+          case 'CUSTOM':
+            _recordAgendaReceipt(conversation, data);
           case 'RUN_FINISHED':
             pending._streamTerminal =
                 pending._streamTerminal ||

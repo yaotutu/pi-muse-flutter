@@ -15,8 +15,20 @@ Pi Muse 的 Flutter Android 客户端，通过 HTTP/SSE 连接自部署的 [Pi M
 操作说明统一在 [Pi Muse 用户手册](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/index.md) 维护：
 
 - [对话、会话与短信同步](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/conversations-and-agents.md)
+- [日程、待办与提醒](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/agenda.md)
 - [附件、工作区文件与审批](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/files-and-approvals.md)
 - [外观、连接、MCP 与应用更新](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/profile-and-settings.md)
+
+### 日程
+
+底栏「日程」把月历和事项列表放在一页，事项保存在服务端：
+
+- 月历标出当天的安排、截止和待触发提醒，点选某一天把列表筛选到这一天，再点一次取消筛选。
+- 列表可切换「未完成」和「全部」，并按标题或备注搜索；右上角「新建事项」新建一条事项。
+- 事项详情页可改标题、备注、安排时间和截止时间，添加、修改或取消提醒，也能标记完成、重新打开和置顶。标记完成会取消该事项尚未触发的提醒，重新打开不会恢复它们。
+- 聊天里让助手记录的事项以卡片出现在聊天中，点「查看事项」或「修改时间」直接打开同一条事项。
+
+操作步骤见 [Pi Muse 用户手册：日程、待办与提醒](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/agenda.md)，客户端实现约定见 [docs/agenda-client.md](docs/agenda-client.md)。
 
 ### 本地开发
 
@@ -49,8 +61,20 @@ The Pi Muse Flutter client for Android connects to a self-hosted [Pi Muse server
 The [Pi Muse user manual](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/index.md) is the source for usage instructions:
 
 - [Chat, sessions, and SMS sync](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/conversations-and-agents.md)
+- [Agenda, to-dos, and reminders](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/agenda.md)
 - [Attachments, workspace files, and approvals](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/files-and-approvals.md)
 - [Appearance, connection, MCP, and app updates](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/profile-and-settings.md)
+
+### Agenda
+
+The 日程 (Agenda) bottom-bar entry puts a month calendar and the item list on one page; items live on the server:
+
+- The calendar marks each day's schedule, deadline, and pending reminders. Tapping a day filters the list to that day; tapping it again clears the filter.
+- The list switches between 未完成 (Unfinished) and 全部 (All) and searches titles and notes; the 「新建事项」 (New item) button in the top right creates an item.
+- The item page edits the title, notes, schedule, and deadline, adds, moves, or cancels reminders, and marks the item complete, reopens it, or pins it. Completing an item cancels its pending reminders; reopening does not restore them.
+- Items the assistant records in chat appear as cards; tapping 查看事项 (View item) or 修改时间 (Edit time) opens the same item.
+
+See the [Pi Muse manual: Agenda, to-dos, and reminders](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/agenda.md) for the steps and [docs/agenda-client.md](docs/agenda-client.md) for the client implementation rules.
 
 ### Local development
 

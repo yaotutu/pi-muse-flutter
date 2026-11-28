@@ -9,6 +9,7 @@
 | `lib/main.dart`、`lib/src/app/` | Flutter 启动入口、连接生命周期、主题、工作区导航、自适应布局和设置入口。 |
 | `lib/src/network/` | HTTP 传输、服务地址校验、响应与 SSE 解码。 |
 | `lib/src/features/chat/` | 连接级聊天控制器、会话目录与历史、草稿、消息与附件、运行和审批。每个连接由控制器持有一条 `/api/events`，AG-UI 聊天 SSE 按运行管理。 |
+| `lib/src/features/agenda/` | 日历、待办列表、事项与提醒编辑，按服务端接口读取当前状态。 |
 | `lib/src/features/{connection,appearance,app-update}/` | 服务器连接、外观和应用更新的页面及相关操作。 |
 | `lib/src/features/{mcp,subagents,sms-sync,workspace-files}/` | 按功能维护 Pi Muse 客户端页面及接口适配。MCP 设置通过 Pi Muse HTTP API 管理服务端配置。 |
 | `lib/src/shared/` | 跨功能复用的基础工具。 |

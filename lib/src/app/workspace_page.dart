@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../features/agenda/agenda.dart';
 import '../features/app-update/app_update.dart';
 import '../features/appearance/appearance.dart';
 import '../features/chat/chat_controller.dart';
@@ -38,12 +39,12 @@ class _WorkspacePageState extends State<WorkspacePage> {
       selectedIcon: Icon(Icons.chat_bubble),
       label: '聊天',
     ),
-    // 待办和新闻在导航中作为禁用项展示。
     WorkspaceDestination(
-      icon: Icon(Icons.task_alt),
-      label: '待办',
-      enabled: false,
+      icon: Icon(Icons.event_note_outlined),
+      selectedIcon: Icon(Icons.event_note),
+      label: '日程',
     ),
+    // 新闻在导航中作为禁用项展示。
     WorkspaceDestination(
       icon: Icon(Icons.newspaper_outlined),
       label: '新闻',
@@ -56,23 +57,59 @@ class _WorkspacePageState extends State<WorkspacePage> {
     ),
   ];
 
+  static const _chatIndex = 0;
+  static const _agendaIndex = 1;
+  static const _settingsIndex = 3;
+
   final _contentKey = GlobalKey();
-  bool _settingsSelected = false;
+  late final AgendaController _agenda = AgendaController(
+    client: AgendaClient(widget.chat.api),
+    events: widget.chat.workspaceEvents,
+  );
+  int _destination = _chatIndex;
+  bool _agendaBuilt = false;
   bool _sidebarPinned = true;
   SettingsSection _settingsSection = SettingsSection.appearance;
 
+  @override
+  void initState() {
+    super.initState();
+    _agenda.addListener(_onAgendaChanged);
+  }
+
+  @override
+  void dispose() {
+    _agenda.removeListener(_onAgendaChanged);
+    _agenda.dispose();
+    super.dispose();
+  }
+
+  /// 聊天里的事项卡片要求打开事项时，切到日程页。
+  void _onAgendaChanged() {
+    if (!mounted) return;
+    if (_agenda.focusItemId == null || _destination == _agendaIndex) return;
+    setState(() {
+      _destination = _agendaIndex;
+      _agendaBuilt = true;
+    });
+  }
+
   void _selectDestination(int index) {
-    final showSettings = index == 3;
-    if (_settingsSelected == showSettings) return;
+    if (index == _destination) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _settingsSelected = showSettings);
+    setState(() {
+      _destination = index;
+      if (index == _agendaIndex) _agendaBuilt = true;
+    });
+    // 回到日程页时重新读取，拿到服务端最新的事项。
+    if (index == _agendaIndex) _agenda.refresh();
   }
 
   void _openConnection(WorkspaceLayout layout) {
     if (layout.useSplitPane) {
       FocusManager.instance.primaryFocus?.unfocus();
       setState(() {
-        _settingsSelected = true;
+        _destination = _settingsIndex;
         _settingsSection = SettingsSection.connection;
       });
       return;
@@ -99,7 +136,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
       onSettings: inDrawer
           ? () {
               closeDrawer();
-              _selectDestination(3);
+              _selectDestination(_settingsIndex);
             }
           : null,
     );
@@ -128,52 +165,63 @@ class _WorkspacePageState extends State<WorkspacePage> {
   Widget build(BuildContext context) {
     final layout = WorkspaceLayout.of(context);
     final compact = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final onChat = _destination == _chatIndex;
     return PopScope(
-      canPop: !_settingsSelected,
+      canPop: onChat,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _settingsSelected) _selectDestination(0);
+        if (!didPop && !onChat) _selectDestination(_chatIndex);
       },
       child: AdaptiveWorkspaceShell(
         layout: layout,
-        selectedIndex: _settingsSelected ? 3 : 0,
+        selectedIndex: _destination,
         onDestinationSelected: _selectDestination,
         destinations: _destinations,
-        drawer: _settingsSelected
-            ? null
-            : Builder(
+        drawer: onChat
+            ? Builder(
                 builder: (context) => Drawer(
                   semanticLabel: '侧边导航',
                   child: SafeArea(
                     child: _sessionPanel(context, inDrawer: true),
                   ),
                 ),
-              ),
+              )
+            : null,
         onDrawerChanged: (open) {
           // 抽屉只改变当前路由的本地历史，主动同步 Android 的返回处理状态。
           NavigationNotification(canHandlePop: open).dispatch(context);
         },
-        sidebar: _settingsSelected ? null : Builder(builder: _sessionPanel),
-        sidebarVisible: !_settingsSelected && _sidebarPinned,
-        hideBottomBar: !_settingsSelected && compact,
+        sidebar: onChat ? Builder(builder: _sessionPanel) : null,
+        sidebarVisible: onChat && _sidebarPinned,
+        hideBottomBar: _destination != _settingsIndex && compact,
         body: KeyedSubtree(
           key: _contentKey,
           child: Stack(
             fit: StackFit.expand,
             children: [
+              // 聊天页始终保留在树上，切到日程时草稿和阅读位置都不会丢。
               Offstage(
-                offstage: _settingsSelected,
+                offstage: !onChat,
                 child: TickerMode(
-                  enabled: !_settingsSelected,
+                  enabled: onChat,
                   child: ChatPage(
                     chat: widget.chat,
                     compact: compact,
                     toolbarHeight: layout.toolbarHeight,
                     navigationLeading: _chatNavigation(layout),
                     onReconnect: () => _openConnection(layout),
+                    onOpenAgendaItem: _agenda.openItem,
                   ),
                 ),
               ),
-              if (_settingsSelected)
+              if (_agendaBuilt)
+                Offstage(
+                  offstage: _destination != _agendaIndex,
+                  child: TickerMode(
+                    enabled: _destination == _agendaIndex,
+                    child: AgendaPage(agenda: _agenda),
+                  ),
+                ),
+              if (_destination == _settingsIndex)
                 ListenableBuilder(
                   listenable: widget.chat,
                   builder: (_, _) => SettingsPage(

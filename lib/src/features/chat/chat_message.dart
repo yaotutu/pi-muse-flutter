@@ -34,6 +34,7 @@ class ChatMessage {
     this.feedbackAvailable = false,
     this.reaction,
     this.saved = false,
+    this.agendaReceipt,
   });
 
   factory ChatMessage.fromJson(Json json) {
@@ -52,6 +53,7 @@ class ChatMessage {
       feedbackAvailable: feedbackAvailable,
       reaction: feedbackAvailable ? _readReaction(feedback) : null,
       saved: feedbackAvailable && _readSaved(feedback),
+      agendaReceipt: agendaReceiptFromMessage(json),
       attachments:
           (json['attachments'] as List?)
               ?.cast<Json>()
@@ -71,6 +73,9 @@ class ChatMessage {
   final bool feedbackAvailable;
   final MessageReaction? reaction;
   final bool saved;
+
+  /// 助手消息上的事项回执。回执只是快照，修改要按 itemId 回读事项。
+  final AgendaReceipt? agendaReceipt;
 
   String get visibleText =>
       role == 'assistant' ? visibleAssistantText(text) : text;

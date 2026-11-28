@@ -261,9 +261,9 @@ void main() {
     final destinations = tester.widget<NavigationBar>(bottom).destinations;
     expect(
       destinations.cast<NavigationDestination>().map((item) => item.label),
-      ['聊天', '待办', '新闻', '设置'],
+      ['聊天', '日程', '新闻', '设置'],
     );
-    expect((destinations[1] as NavigationDestination).enabled, isFalse);
+    expect((destinations[1] as NavigationDestination).enabled, isTrue);
     expect((destinations[2] as NavigationDestination).enabled, isFalse);
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();

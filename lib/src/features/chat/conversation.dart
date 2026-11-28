@@ -90,6 +90,16 @@ class Conversation {
   String? attachedRunId;
   ChatMessage? liveUserMessage;
   final liveReplies = <String, String>{};
+
+  /// 运行过程中收到的事项回执。历史里的同一份回执按 ID 去重。
+  final liveAgendaReceipts = <AgendaReceipt>[];
+
+  /// 记录一条事项回执。
+  void addAgendaReceipt(AgendaReceipt receipt) {
+    if (liveAgendaReceipts.any((entry) => entry.id == receipt.id)) return;
+    liveAgendaReceipts.add(receipt);
+  }
+
   MuseApi? _attachedStreamApi;
   bool stoppingActiveRun = false;
   String? error;

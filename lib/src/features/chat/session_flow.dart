@@ -336,6 +336,16 @@ class _SessionFlow {
           conversation.lastRun = null;
         }
         conversation.history = history;
+        // 历史里已经有同一份回执时，丢掉运行期间记录的副本，避免重复展示。
+        final savedReceipts = history
+            .map((message) => message.agendaReceipt?.id)
+            .whereType<String>()
+            .toSet();
+        if (savedReceipts.isNotEmpty) {
+          conversation.liveAgendaReceipts.removeWhere(
+            (receipt) => savedReceipts.contains(receipt.id),
+          );
+        }
         if (conversation.liveUserMessage case final liveUser?
             when history.any((message) => message.id == liveUser.id)) {
           conversation.liveUserMessage = null;

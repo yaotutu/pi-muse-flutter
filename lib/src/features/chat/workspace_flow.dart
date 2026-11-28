@@ -35,6 +35,9 @@ class _WorkspaceFlow {
   /// 工作区快照版本，每次 ready 递增。
   int _snapshot = 0;
 
+  /// 连接级通知事件，供其它功能复用同一条通知流。
+  final _events = StreamController<WorkspaceEvent>.broadcast();
+
   /// 当前通知流。
   MuseApi? _notificationApi;
 
@@ -51,6 +54,9 @@ class _WorkspaceFlow {
 
   /// 工作区快照版本。
   int get snapshot => _snapshot;
+
+  /// 连接级通知事件。
+  Stream<WorkspaceEvent> get events => _events.stream;
 
   /// 订阅通知并同步当前会话。
   void start() {
@@ -107,6 +113,7 @@ class _WorkspaceFlow {
     final transport = _notificationApi;
     _notificationApi = null;
     transport?.close();
+    unawaited(_events.close());
   }
 
   Future<void> _listen(MuseApi transport) async {
@@ -164,6 +171,8 @@ class _WorkspaceFlow {
       }
       _retry = 0;
       chat.synchronized = true;
+      // 连接就绪后其它功能也要重新读取，通知订阅者按新快照对齐。
+      _events.add((name: 'ready', data: data));
       for (final key in previouslyRunning) {
         if (!_runs.containsKey(key)) unawaited(_readMissedRun(key, snapshot));
       }
@@ -202,6 +211,8 @@ class _WorkspaceFlow {
         case 'session_directory_updated':
           unawaited(chat.refreshDirectory());
       }
+      // 其它功能复用同一条连接级通知流，按事件名自行处理。
+      _events.add((name: frame.event ?? '', data: data));
     }
     chat._changed();
   }

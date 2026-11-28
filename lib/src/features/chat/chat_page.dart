@@ -16,6 +16,7 @@ class ChatPage extends StatefulWidget {
     this.navigationLeading,
     this.toolbarHeight = kToolbarHeight,
     this.compact = false,
+    this.onOpenAgendaItem,
   });
 
   final ChatController chat;
@@ -23,6 +24,9 @@ class ChatPage extends StatefulWidget {
   final Widget? navigationLeading;
   final double toolbarHeight;
   final bool compact;
+
+  /// 打开日程里的某个事项。
+  final AgendaItemOpener? onOpenAgendaItem;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -264,6 +268,7 @@ class _ChatPageState extends State<ChatPage> {
                         messages: messages,
                         footers: footers,
                         onQuote: _focus.requestFocus,
+                        onOpenAgendaItem: widget.onOpenAgendaItem,
                       ),
                     ),
                     if (_chat.expired)
