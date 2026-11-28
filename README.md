@@ -19,12 +19,16 @@ Pi Muse 的 Flutter Android 客户端，通过 HTTP/SSE 连接自部署的 [Pi M
 - [附件、工作区文件与审批](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/files-and-approvals.md)
 - [外观、连接、MCP 与应用更新](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/profile-and-settings.md)
 
+### 界面
+
+应用按 Material 3 Expressive 的导航、颜色和主要操作布局设计。手机竖屏使用底栏，宽窗使用左侧导航轨，空间充足时展开会话、日程和设置的分栏。「设置 → 外观」可跟随 Android 壁纸主题或选用固定配色，并单独设置浅色或深色模式。
+
 ### 日程
 
-打开「日程」可以在一页查看月历和事项列表。手机竖屏上下排列，宽屏横向并排。事项保存在服务端：
+打开「日程」可以在一页查看月历和事项列表。手机竖屏上下排列，平板横屏通常并排。事项保存在服务端：
 
 - 月历标出当天的安排、截止和待触发提醒，点选某一天把列表筛选到这一天，再点一次取消筛选。
-- 列表可切换「未完成」和「全部」，并按标题或备注搜索；手机搜索时月历给键盘和结果让出空间。右上角「新建事项」新建一条事项。
+- 列表可切换「未完成」和「全部」，并按标题或备注搜索；手机进入搜索后，月历让位给搜索结果。右下角「新建事项」新建一条事项。
 - 事项详情页可改标题、备注、安排时间和截止时间，添加、修改或取消提醒，也能标记完成、重新打开和置顶；两种布局都把保存和完成操作固定在底部。标记完成会取消该事项尚未触发的提醒，重新打开不会恢复它们。
 - 聊天里让助手记录的事项以卡片出现在聊天中，点「查看事项」或「修改时间」直接打开同一条事项。
 
@@ -65,12 +69,16 @@ The [Pi Muse user manual](https://github.com/yaotutu/pi-muse/blob/main/docs/manu
 - [Attachments, workspace files, and approvals](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/files-and-approvals.md)
 - [Appearance, connection, MCP, and app updates](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/profile-and-settings.md)
 
+### Interface
+
+The app follows Material 3 Expressive guidance for navigation, color, and primary actions. Phone portrait uses a bottom bar, wider windows use a left rail, and expanded windows show side-by-side panes for chat, agenda, and settings. Open **设置 → 外观** (Settings → Appearance) to follow Android wallpaper colors or choose a fixed palette, with a separate light or dark mode preference.
+
 ### Agenda
 
 Open 日程 (Agenda) to see the month calendar and item list on one page. They stack in phone portrait and sit side by side in tablet landscape. Items live on the server:
 
 - The calendar marks each day's schedule, deadline, and pending reminders. Tapping a day filters the list to that day; tapping it again clears the filter.
-- The list switches between 未完成 (Unfinished) and 全部 (All) and searches titles and notes. On phones, the calendar makes room for the search keyboard and results. The 「新建事项」 (New item) button in the top right creates an item.
+- The list switches between 未完成 (Unfinished) and 全部 (All) and searches titles and notes. On phones, the calendar makes room for the search keyboard and results. The 「新建事项」 (New item) button in the lower right creates an item.
 - The item page edits the title, notes, schedule, and deadline, adds, moves, or cancels reminders, and marks the item complete, reopens it, or pins it. Save and Mark complete stay at the bottom in both layouts. Completing an item cancels its pending reminders; reopening does not restore them.
 - Items the assistant records in chat appear as cards; tapping 查看事项 (View item) or 修改时间 (Edit time) opens the same item.
 

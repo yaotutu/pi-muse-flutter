@@ -26,25 +26,12 @@ class AppearancePage extends StatelessWidget {
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('主题模式', style: theme.textTheme.titleLarge),
-                          const SizedBox(height: 4),
-                          Text(
-                            '仅在本机生效。',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: Text('主题模式', style: theme.textTheme.titleLarge),
                     ),
                     Material(
-                      color: colors.surfaceContainerLowest,
+                      color: colors.surfaceContainerLow,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: BorderSide(color: colors.outlineVariant),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: Column(
@@ -117,25 +104,12 @@ class AppearancePage extends StatelessWidget {
                     const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('配色', style: theme.textTheme.titleLarge),
-                          const SizedBox(height: 4),
-                          Text(
-                            '仅在本机生效。',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: Text('配色', style: theme.textTheme.titleLarge),
                     ),
                     Material(
-                      color: colors.surfaceContainerLowest,
+                      color: colors.surfaceContainerLow,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: BorderSide(color: colors.outlineVariant),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: RadioGroup<MusePalette>(
@@ -146,8 +120,12 @@ class AppearancePage extends StatelessWidget {
                         child: Column(
                           children: [
                             for (final palette in MusePalette.values) ...[
-                              if (palette != MusePalette.indigo)
-                                Divider(height: 1, indent: 16, endIndent: 16),
+                              if (palette != MusePalette.system)
+                                const Divider(
+                                  height: 1,
+                                  indent: 16,
+                                  endIndent: 16,
+                                ),
                               RadioListTile<MusePalette>(
                                 value: palette,
                                 enabled: !settings.saving,
@@ -155,12 +133,19 @@ class AppearancePage extends StatelessWidget {
                                 controlAffinity:
                                     ListTileControlAffinity.leading,
                                 title: Text(palette.label),
-                                subtitle: palette == MusePalette.indigo
-                                    ? const Text('默认配色')
+                                subtitle: palette == MusePalette.system
+                                    ? Text(
+                                        settings.hasSystemColors
+                                            ? '使用 Android 壁纸主题的颜色'
+                                            : '系统配色不可用时使用靛蓝',
+                                      )
                                     : null,
                                 secondary: ExcludeSemantics(
                                   child: _PaletteSwatch(
-                                    colors: palette.colors(theme.brightness),
+                                    colors: settings.colorsFor(
+                                      palette,
+                                      theme.brightness,
+                                    ),
                                   ),
                                 ),
                               ),

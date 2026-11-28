@@ -14,7 +14,6 @@ class ChatPage extends StatefulWidget {
     required this.chat,
     required this.onReconnect,
     this.navigationLeading,
-    this.toolbarHeight = kToolbarHeight,
     this.compact = false,
     this.onOpenAgendaItem,
   });
@@ -22,7 +21,6 @@ class ChatPage extends StatefulWidget {
   final ChatController chat;
   final VoidCallback onReconnect;
   final Widget? navigationLeading;
-  final double toolbarHeight;
   final bool compact;
 
   /// 打开日程里的某个事项。
@@ -209,18 +207,10 @@ class _ChatPageState extends State<ChatPage> {
         final activity = hasApproval ? null : _chat.activityLabel;
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: widget.toolbarHeight,
-            backgroundColor: colors.surface,
-            foregroundColor: colors.onSurface,
-            surfaceTintColor: Colors.transparent,
-            shadowColor: colors.shadow.withValues(alpha: 0.12),
-            elevation: 1,
-            scrolledUnderElevation: 1,
-            titleSpacing: 0,
             leadingWidth: kToolbarHeight,
             leading: widget.navigationLeading,
             title: _ChatTitle(title: title, activity: activity),
-            centerTitle: true,
+            centerTitle: false,
             actions: [
               SizedBox(
                 width: kToolbarHeight,
@@ -369,16 +359,7 @@ class _ChatTitle extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Flexible(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: colors.onSurface,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
         if (activity case final String label) ...[
           const SizedBox(width: 6),
@@ -401,7 +382,7 @@ class _ChatTitle extends StatelessWidget {
                     Text(
                       '工作中',
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.primary,
+                        color: colors.onSecondaryContainer,
                       ),
                     ),
                   ],

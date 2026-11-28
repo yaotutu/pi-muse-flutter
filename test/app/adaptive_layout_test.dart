@@ -9,42 +9,21 @@ import 'package:pi_muse_flutter/src/app/workspace_page.dart';
 import 'package:pi_muse_flutter/src/features/connection/connection_page.dart';
 
 void main() {
-  test(
-    'WorkspaceLayout classifies phone, portrait tablet, split view, and landscape tablet',
-    () {
-      final phonePortrait = WorkspaceLayout.fromSize(const Size(390, 844));
-      expect(phonePortrait.useRightRail, isFalse);
-      expect(phonePortrait.canPinSidebar, isFalse);
-      expect(phonePortrait.useSplitPane, isFalse);
-      expect(phonePortrait.compactToolbar, isFalse);
-
-      // 竖屏平板（如 800x1280 @213dpi 约 601x961 dp）保持底栏与抽屉，不挤占横向空间。
-      final tabletPortrait = WorkspaceLayout.fromSize(const Size(601, 961));
-      expect(tabletPortrait.useRightRail, isFalse);
-      expect(tabletPortrait.canPinSidebar, isFalse);
-      expect(tabletPortrait.useSplitPane, isFalse);
-
-      // 窄分屏窗口退回底栏。
-      final splitNarrow = WorkspaceLayout.fromSize(const Size(480, 580));
-      expect(splitNarrow.useRightRail, isFalse);
-      expect(splitNarrow.canPinSidebar, isFalse);
-
-      // 800x600 中等横窗切至右侧竖排导航，不常驻双栏。
-      final mediumLandscape = WorkspaceLayout.fromSize(const Size(800, 600));
-      expect(mediumLandscape.useRightRail, isTrue);
-      expect(mediumLandscape.canPinSidebar, isFalse);
-      expect(mediumLandscape.useSplitPane, isFalse);
-      expect(mediumLandscape.compactToolbar, isTrue);
-
-      // 横屏平板（961x580 dp）启用右侧竖排导航、可常驻左侧会话栏、设置双栏与紧凑顶栏。
-      final tabletLandscape = WorkspaceLayout.fromSize(const Size(961, 580));
-      expect(tabletLandscape.useRightRail, isTrue);
-      expect(tabletLandscape.canPinSidebar, isTrue);
-      expect(tabletLandscape.useSplitPane, isTrue);
-      expect(tabletLandscape.compactToolbar, isTrue);
-      expect(tabletLandscape.toolbarHeight, 48);
-    },
-  );
+  test('workspace uses Android window size classes at each breakpoint', () {
+    for (final (width, height, rail, twoPanes) in [
+      (390.0, 844.0, false, false),
+      (599.0, 961.0, false, false),
+      (600.0, 961.0, true, false),
+      (839.0, 600.0, true, false),
+      (840.0, 479.0, true, false),
+      (840.0, 480.0, true, true),
+      (840.0, 1100.0, true, true),
+    ]) {
+      final layout = WorkspaceLayout.fromSize(Size(width, height));
+      expect(layout.useRail, rail, reason: '${width}dp × ${height}dp');
+      expect(layout.useSplitPane, twoPanes, reason: '${width}dp × ${height}dp');
+    }
+  });
 
   Widget buildApp(
     ChatController chat,
@@ -74,37 +53,33 @@ void main() {
     return (chat, appearance);
   }
 
-  testWidgets('the phone bottom bar communicates a disabled destination', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final (chat, appearance) = createDeps();
-    addTearDown(chat.dispose);
-    addTearDown(appearance.dispose);
-    await tester.pumpWidget(buildApp(chat, appearance));
-    final bar = find.byType(NavigationBar);
-    final news = find.widgetWithText(NavigationDestination, '新闻');
-    expect(tester.widget<NavigationDestination>(news).enabled, isFalse);
-    final data = NavigationBarTheme.of(tester.element(bar));
-    final colors = Theme.of(tester.element(bar)).colorScheme;
-    expect(
-      data.labelTextStyle!.resolve({WidgetState.disabled})!.color,
-      colors.onSurface.withValues(alpha: 0.38),
-    );
-    expect(
-      data.iconTheme!.resolve({WidgetState.disabled})!.color,
-      colors.onSurface.withValues(alpha: 0.38),
-    );
-    await tester.tap(news);
-    await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(bar).selectedIndex, 0);
-  });
+  testWidgets(
+    'the compact bottom bar uses the Expressive height and real destinations',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final (chat, appearance) = createDeps();
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      await tester.pumpWidget(buildApp(chat, appearance));
+      final bar = find.byType(NavigationBar);
+      expect(tester.getSize(bar).height, 64);
+      for (final label in ['聊天', '日程', '设置']) {
+        final destination = find.widgetWithText(NavigationDestination, label);
+        expect(
+          tester.widget<NavigationDestination>(destination).enabled,
+          isTrue,
+        );
+        expect(tester.getSize(destination).height, greaterThanOrEqualTo(48));
+      }
+      expect(find.text('新闻'), findsNothing);
+    },
+  );
 
   testWidgets(
-    'portrait tablet keeps bottom NavigationBar even with soft keyboard open',
+    'medium portrait keeps the leading rail and one pane when the keyboard opens',
     (tester) async {
       tester.view.physicalSize = const Size(601, 961);
       tester.view.devicePixelRatio = 1;
@@ -117,18 +92,18 @@ void main() {
       addTearDown(appearance.dispose);
 
       await tester.pumpWidget(buildApp(chat, appearance));
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.byType(NavigationRail), findsNothing);
-
-      // 弹起键盘导致可视高度小于宽度，仍不能误判为横屏。
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byTooltip('打开导航菜单'), findsOneWidget);
       tester.view.viewInsets = const FakeViewPadding(bottom: 420);
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byTooltip('打开导航菜单'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'landscape tablet places NavigationRail on the right, supports collapsible left sidebar, and keeps draft across rotation',
+    'expanded window places the rail at the leading edge and preserves the draft when resizing',
     (tester) async {
       tester.view.physicalSize = const Size(961, 580);
       tester.view.devicePixelRatio = 1;
@@ -145,13 +120,14 @@ void main() {
       final rail = find.byType(NavigationRail);
       expect(rail, findsOneWidget);
 
-      // 导航栏必须在最右侧，聊天内容在其左侧。
+      // 导航轨、会话栏、聊天正文按起始侧顺序排列。
       final appBar = find.byType(AppBar);
       expect(
-        tester.getTopLeft(rail).dx,
-        greaterThanOrEqualTo(tester.getTopRight(appBar).dx),
+        tester.getTopRight(rail).dx,
+        lessThan(tester.getTopLeft(find.text('研究笔记')).dx),
       );
-      expect(tester.getSize(appBar).height, 48);
+      expect(tester.getSize(rail).width, 96);
+      expect(tester.getSize(appBar).height, 64);
 
       // 宽横屏默认常驻左侧会话栏，且可一键折叠与展开。
       expect(find.text('研究笔记'), findsOneWidget);
@@ -168,16 +144,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('研究笔记'), findsOneWidget);
 
-      // 键盘弹起时右侧导航与输入区不溢出。
+      // 键盘弹起时导航与输入区不溢出。
       await tester.enterText(find.byType(TextField), '旋转前写一半的草稿');
       tester.view.viewInsets = const FakeViewPadding(bottom: 260);
       await tester.pumpAndSettle();
       tester.view.viewInsets = FakeViewPadding.zero;
       await tester.pumpAndSettle();
 
-      // 旋转到竖屏：切换为底栏，聊天草稿原样保留。
+      // 窗口缩窄时切换为底栏，聊天草稿原样保留。
       final chatState = tester.state(find.byType(ChatPage));
-      tester.view.physicalSize = const Size(601, 961);
+      tester.view.physicalSize = const Size(390, 844);
       await tester.pumpAndSettle();
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.byType(NavigationRail), findsNothing);
@@ -218,7 +194,7 @@ void main() {
   });
 
   testWidgets(
-    'landscape tablet opens Settings in split-pane master-detail with right rail',
+    'landscape tablet opens Settings in split-pane master-detail with leading rail',
     (tester) async {
       tester.view.physicalSize = const Size(961, 580);
       tester.view.devicePixelRatio = 1;
@@ -233,16 +209,16 @@ void main() {
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
 
-      // 右侧导航常驻，左侧为设置目录，中间直接展示默认详情页「外观」。
+      // 起始侧导航常驻，设置目录与详情并排，直接展示默认详情页「外观」。
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.text('外观'), findsNWidgets(2));
       expect(find.byType(AppBar), findsNWidgets(2));
-      expect(tester.getRect(find.widgetWithText(AppBar, '设置')).bottom, 48);
-      expect(tester.getRect(find.widgetWithText(AppBar, '外观')).bottom, 48);
+      expect(tester.getRect(find.widgetWithText(AppBar, '设置')).bottom, 64);
+      expect(tester.getRect(find.widgetWithText(AppBar, '外观')).bottom, 64);
       expect(find.text('主题模式'), findsOneWidget);
       expect(find.text('配色'), findsOneWidget);
 
-      // 点选左侧设置目录直接原位切换中间详情页，不压入新路由。
+      // 点选左侧设置目录直接原位切换右侧详情页，不压入新路由。
       await tester.tap(find.text('MCP 服务'));
       await tester.pump();
       expect(find.text('主题模式'), findsNothing);
@@ -252,7 +228,7 @@ void main() {
       await tester.pump();
       expect(find.text('主题模式'), findsOneWidget);
 
-      // 切回聊天时右侧导航仍可无缝切回。
+      // 切回聊天时导航仍可无缝切回。
       await tester.tap(find.text('聊天'));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsOneWidget);
@@ -300,7 +276,7 @@ void main() {
       await tester.tap(find.text('服务器连接'));
       await tester.pumpAndSettle();
 
-      // 保持设置双栏与右侧导航栏，不提前弹窗阻断，样式统一为顶部卡片。
+      // 保持设置双栏与起始侧导航轨，不提前弹窗阻断，样式统一为顶部卡片。
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.text('服务器连接'), findsNWidgets(2));
       expect(find.text('当前连接'), findsOneWidget);

@@ -12,12 +12,14 @@ class AgendaPage extends StatefulWidget {
     super.key,
     required this.agenda,
     required this.keyboardVisible,
+    required this.showCalendarPane,
   });
 
   final AgendaController agenda;
 
   // 外壳统一处理键盘避让；这里接收外壳移除 viewInsets 之前的状态。
   final bool keyboardVisible;
+  final bool showCalendarPane;
 
   @override
   State<AgendaPage> createState() => _AgendaPageState();
@@ -28,16 +30,11 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _searching = false;
   String? _opening;
 
-  /// 宽横屏分栏的最小可用宽度。
-  static const _wideMinWidth = 660.0;
-
-  /// 宽横屏分栏的最小窗口高度。用窗口高度判断，避免软键盘弹起时布局来回切换。
-  static const _wideMinHeight = 400.0;
-
-  /// 宽横屏下左侧月历栏的宽度。
-  static const _calendarPaneWidth = 320.0;
+  // 7 个日期列各预留 48dp，另加两侧留白。
+  static const _calendarPaneWidth = 360.0;
 
   AgendaController get _agenda => widget.agenda;
+  bool get _showCreate => !_searching && !widget.keyboardVisible;
 
   @override
   void initState() {
@@ -109,13 +106,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('日程'),
-        backgroundColor: colors.surface,
-        foregroundColor: colors.onSurface,
-        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             tooltip: _searching ? '关闭搜索' : '搜索事项',
@@ -133,31 +126,26 @@ class _AgendaPageState extends State<AgendaPage> {
             icon: const Icon(Icons.refresh),
             onPressed: () => _agenda.refresh(),
           ),
-          IconButton(
-            tooltip: '新建事项',
-            icon: const Icon(Icons.add),
-            onPressed: _createItem,
-          ),
         ],
       ),
+      floatingActionButton: _showCreate
+          ? FloatingActionButton.extended(
+              heroTag: null,
+              onPressed: _createItem,
+              icon: const Icon(Icons.add),
+              label: const Text('新建事项'),
+            )
+          : null,
       body: SafeArea(
         top: false,
         child: LayoutBuilder(
-          builder: (context, constraints) => _isWide(constraints)
+          builder: (context, constraints) =>
+              widget.showCalendarPane && constraints.maxWidth >= 680
               ? _buildWideLayout(context)
               : _buildNarrowLayout(context, constraints.maxHeight),
         ),
       ),
     );
-  }
-
-  /// 宽横屏才左右分栏：宽度按实际可用空间判断，方向与高度按窗口判断，
-  /// 避免竖屏宽窗口和软键盘弹起时把分栏布局改回单列。
-  bool _isWide(BoxConstraints constraints) {
-    final size = MediaQuery.sizeOf(context);
-    return size.width > size.height &&
-        size.height >= _wideMinHeight &&
-        constraints.maxWidth >= _wideMinWidth;
   }
 
   /// 窄屏与竖屏布局：上方月历，下方筛选与列表。
@@ -166,7 +154,7 @@ class _AgendaPageState extends State<AgendaPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_searching) _buildSearchField(),
-        if (!widget.keyboardVisible)
+        if (_showCreate)
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: availableHeight * 0.57),
             child: SingleChildScrollView(
@@ -201,7 +189,6 @@ class _AgendaPageState extends State<AgendaPage> {
               selectedDay: _agenda.selectedDay,
               items: _agenda.monthItems,
               instanceZone: _agenda.instanceZone,
-              compact: true,
               onMonthChanged: _agenda.setMonth,
               onSelectDay: _agenda.selectDay,
             ),
@@ -231,14 +218,14 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _buildSearchField() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: TextField(
+      child: SearchBar(
         controller: _search,
-        autofocus: true,
+        autoFocus: true,
         textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: '搜索事项标题或备注',
-          isDense: true,
-          suffixIcon: IconButton(
+        hintText: '搜索事项标题或备注',
+        elevation: const WidgetStatePropertyAll(0),
+        trailing: [
+          IconButton(
             tooltip: '应用搜索',
             icon: const Icon(Icons.search),
             onPressed: () {
@@ -246,7 +233,7 @@ class _AgendaPageState extends State<AgendaPage> {
               unawaited(_searchItems(_search.text));
             },
           ),
-        ),
+        ],
         onSubmitted: _searchItems,
       ),
     );
@@ -286,10 +273,11 @@ class _AgendaPageState extends State<AgendaPage> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final error = _agenda.error;
+    final emptyPadding = EdgeInsets.fromLTRB(24, 12, 24, _showCreate ? 64 : 12);
     if (error != null && _agenda.items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      return Padding(
+        padding: emptyPadding,
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -308,15 +296,16 @@ class _AgendaPageState extends State<AgendaPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_agenda.items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      return Padding(
+        padding: emptyPadding,
+        child: Center(
           child: Text(
             _agenda.query.isNotEmpty
                 ? '没有符合搜索条件的事项'
                 : _agenda.selectedDay == null
                 ? '还没有事项'
                 : '这一天没有事项',
+            textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -325,7 +314,7 @@ class _AgendaPageState extends State<AgendaPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+      padding: EdgeInsets.fromLTRB(12, 4, 12, _showCreate ? 88 : 24),
       itemCount: _agenda.items.length,
       separatorBuilder: (_, _) => const Divider(height: 1, indent: 56),
       itemBuilder: (context, index) {
@@ -353,7 +342,6 @@ class _AgendaCalendarCard extends StatelessWidget {
     required this.instanceZone,
     required this.onMonthChanged,
     required this.onSelectDay,
-    this.compact = false,
   });
 
   final DateTime month;
@@ -365,9 +353,6 @@ class _AgendaCalendarCard extends StatelessWidget {
   final ValueChanged<DateTime> onMonthChanged;
   final ValueChanged<DateTime?> onSelectDay;
 
-  /// 宽横屏左栏使用紧凑格子，整月日期尽量一屏可见。
-  final bool compact;
-
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
   @override
@@ -377,163 +362,181 @@ class _AgendaCalendarCard extends StatelessWidget {
     final marks = _marksByDay();
     final today = DateTime.now();
     final scaler = MediaQuery.textScalerOf(context);
-    final dayStyle = theme.textTheme.bodySmall!;
+    final dayStyle = theme.textTheme.labelMedium!;
+    final localizations = MaterialLocalizations.of(context);
     final fontSize = dayStyle.fontSize ?? 12;
     final numberHeight = scaler.scale(fontSize) * (dayStyle.height ?? 1.33);
     // 日期数字随系统字号增高，同时为三个状态图标保留独立一行。
-    final cellHeight = (numberHeight + 18).clamp(
-      compact ? 36.0 : 44.0,
-      double.infinity,
-    );
+    final cellHeight = (numberHeight + 18).clamp(48.0, double.infinity);
     final first = DateTime(month.year, month.month);
     final leading = first.weekday - 1;
     final days = DateTime(month.year, month.month + 1, 0).day;
     final cells = ((leading + days) / 7).ceil() * 7;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: '上个月',
-                icon: const Icon(Icons.chevron_left),
-                onPressed: () =>
-                    onMonthChanged(DateTime(month.year, month.month - 1)),
-              ),
-              Expanded(
-                child: Text(
-                  '${month.year}年${month.month}月',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall,
-                ),
-              ),
-              IconButton(
-                tooltip: '下个月',
-                icon: const Icon(Icons.chevron_right),
-                onPressed: () =>
-                    onMonthChanged(DateTime(month.year, month.month + 1)),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              for (final label in _weekdays)
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisExtent: cellHeight,
-            ),
-            itemCount: cells,
-            itemBuilder: (context, index) {
-              final dayNumber = index - leading + 1;
-              if (dayNumber < 1 || dayNumber > days) {
-                return const SizedBox.shrink();
-              }
-              final day = DateTime(month.year, month.month, dayNumber);
-              final selected =
-                  selectedDay != null && DateUtils.isSameDay(day, selectedDay!);
-              final isToday = DateUtils.isSameDay(day, today);
-              final dayMarks = marks[day] ?? const <_CalendarMark>{};
-              return InkWell(
-                onTap: () => onSelectDay(selected ? null : day),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  margin: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: selected ? colors.secondaryContainer : null,
-                    border: isToday && !selected
-                        ? Border.all(color: colors.primary)
-                        : null,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '$dayNumber',
-                        style: dayStyle.copyWith(
-                          color: selected
-                              ? colors.onSecondaryContainer
-                              : colors.onSurface,
-                          fontWeight: isToday || selected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                      ),
-                      SizedBox(
-                        height: 12,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (final mark in _CalendarMark.values)
-                              if (dayMarks.contains(mark))
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 0.5,
-                                  ),
-                                  child: Icon(
-                                    _markIcon(mark),
-                                    size: 11,
-                                    color: _markColor(mark, colors),
-                                  ),
-                                ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 2),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              runSpacing: 4,
+    return Card.filled(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                for (final mark in _CalendarMark.values)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _markIcon(mark),
-                          size: 12,
-                          color: _markColor(mark, colors),
+                IconButton(
+                  tooltip: '上个月',
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () =>
+                      onMonthChanged(DateTime(month.year, month.month - 1)),
+                ),
+                Expanded(
+                  child: Text(
+                    '${month.year}年${month.month}月',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '下个月',
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () =>
+                      onMonthChanged(DateTime(month.year, month.month + 1)),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                for (final label in _weekdays)
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        label,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                        const SizedBox(width: 3),
-                        Text(
-                          _markLabel(mark),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
               ],
             ),
-          ),
-        ],
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisExtent: cellHeight,
+              ),
+              itemCount: cells,
+              itemBuilder: (context, index) {
+                final dayNumber = index - leading + 1;
+                if (dayNumber < 1 || dayNumber > days) {
+                  return const SizedBox.shrink();
+                }
+                final day = DateTime(month.year, month.month, dayNumber);
+                final selected =
+                    selectedDay != null &&
+                    DateUtils.isSameDay(day, selectedDay!);
+                final isToday = DateUtils.isSameDay(day, today);
+                final dayMarks = marks[day] ?? const <_CalendarMark>{};
+                return Semantics(
+                  label: [
+                    localizations.formatFullDate(day),
+                    if (isToday) '今天',
+                    for (final mark in _CalendarMark.values)
+                      if (dayMarks.contains(mark)) _markLabel(mark),
+                  ].join('，'),
+                  selected: selected,
+                  button: true,
+                  child: InkWell(
+                    onTap: () => onSelectDay(selected ? null : day),
+                    excludeFromSemantics: true,
+                    borderRadius: BorderRadius.circular(16),
+                    child: ExcludeSemantics(
+                      child: Container(
+                        margin: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: selected ? colors.primaryContainer : null,
+                          border: isToday && !selected
+                              ? Border.all(color: colors.primary)
+                              : null,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$dayNumber',
+                              style: dayStyle.copyWith(
+                                color: selected
+                                    ? colors.onPrimaryContainer
+                                    : colors.onSurface,
+                                fontWeight: isToday || selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                            SizedBox(
+                              height: 12,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  for (final mark in _CalendarMark.values)
+                                    if (dayMarks.contains(mark))
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 0.5,
+                                        ),
+                                        child: Icon(
+                                          _markIcon(mark),
+                                          size: 11,
+                                          color: _markColor(mark, colors),
+                                        ),
+                                      ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  onTap: () => onSelectDay(selected ? null : day),
+                );
+              },
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                runSpacing: 4,
+                children: [
+                  for (final mark in _CalendarMark.values)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _markIcon(mark),
+                            size: 12,
+                            color: _markColor(mark, colors),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            _markLabel(mark),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

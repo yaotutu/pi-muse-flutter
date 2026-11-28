@@ -219,7 +219,7 @@ void main() {
     expect(find.byType(Image), findsNothing);
     expect(find.byType(MaterialBanner), findsNothing);
     expect(find.text('就绪'), findsNothing);
-    expect(tester.getSize(bar).height, kToolbarHeight);
+    expect(tester.getSize(bar).height, 64);
     expect(tester.getTopLeft(list).dy, tester.getBottomLeft(bar).dy);
     final barPosition = tester.getTopLeft(bar);
     await tester.drag(list, const Offset(0, 420));
@@ -233,7 +233,12 @@ void main() {
     );
     expect(tester.getTopLeft(bar), barPosition);
     final title = find.descendant(of: bar, matching: find.text('主聊天'));
-    expect(tester.getCenter(title).dx, closeTo(180, 15));
+    final menu = find.byTooltip('打开导航菜单');
+    expect(
+      tester.getTopLeft(title).dx,
+      greaterThan(tester.getTopRight(menu).dx),
+    );
+    expect(tester.getCenter(title).dx, lessThan(tester.getCenter(bar).dx));
     await tester.tap(title);
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
@@ -261,13 +266,13 @@ void main() {
     final destinations = tester.widget<NavigationBar>(bottom).destinations;
     expect(
       destinations.cast<NavigationDestination>().map((item) => item.label),
-      ['聊天', '日程', '新闻', '设置'],
+      ['聊天', '日程', '设置'],
     );
     expect((destinations[1] as NavigationDestination).enabled, isTrue);
-    expect((destinations[2] as NavigationDestination).enabled, isFalse);
+    expect((destinations[2] as NavigationDestination).enabled, isTrue);
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 2);
     expect(navigator.currentState!.canPop(), isFalse);
     expect(find.byType(BackButton), findsNothing);
     expect(find.text('外观'), findsOneWidget);
@@ -278,7 +283,7 @@ void main() {
     expect(find.text('服务器连接'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 2);
     await tester.tap(find.text('聊天'));
     await tester.pumpAndSettle();
     expect(tester.widget<NavigationBar>(bottom).selectedIndex, 0);
@@ -286,14 +291,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.descendant(of: drawer, matching: find.text('设置')));
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 3);
+    expect(tester.widget<NavigationBar>(bottom).selectedIndex, 2);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(tester.widget<NavigationBar>(bottom).selectedIndex, 0);
     expect(drawer, findsNothing);
     tester.view.viewInsets = const FakeViewPadding(bottom: 340);
     await tester.pumpAndSettle();
-    expect(tester.getSize(bar).height, kToolbarHeight);
+    expect(tester.getSize(bar).height, 64);
     expect(tester.getBottomRight(find.byType(TextField)).dy, lessThan(400));
     expect(bottom, findsNothing);
     await tester.pumpWidget(const SizedBox());

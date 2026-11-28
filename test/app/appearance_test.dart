@@ -10,38 +10,70 @@ import 'package:pi_muse_flutter/src/features/chat/chat_page.dart';
 import 'package:pi_muse_flutter/src/app/workspace_page.dart';
 
 void main() {
-  test('the original indigo roles and page styling are retained', () {
-    for (final (brightness, surface, card, primary, bubble, outline) in [
-      (
-        Brightness.light,
-        0xfff7f9fb,
-        0xffffffff,
-        0xff00288e,
-        0xffdbeafe,
-        0xffe2e8f0,
-      ),
-      (
-        Brightness.dark,
-        0xff111722,
-        0xff1b2433,
-        0xffb8c4ff,
-        0xff25395b,
-        0xff364157,
-      ),
-    ]) {
-      final colors = MusePalette.indigo.colors(brightness);
-      final theme = museTheme(colors);
-      expect(theme.scaffoldBackgroundColor, Color(surface));
-      expect(theme.dividerColor, Color(outline));
-      expect(colors.surfaceContainerLowest, Color(card));
-      expect(colors.primary, Color(primary));
-      expect(colors.primaryContainer, Color(bubble));
-      expect(
-        theme.inputDecorationTheme.focusedBorder?.borderSide,
-        BorderSide(color: Color(primary), width: 1.5),
+  test(
+    'Material palettes keep required foreground contrast in light and dark',
+    () {
+      for (final palette in MusePalette.values) {
+        for (final brightness in Brightness.values) {
+          final colors = palette.colors(brightness);
+          final theme = museTheme(colors);
+          expect(theme.useMaterial3, isTrue);
+          expect(theme.scaffoldBackgroundColor, colors.surface);
+          for (final (foreground, background) in [
+            (colors.onSurface, colors.surface),
+            (colors.onSurfaceVariant, colors.surfaceContainerHigh),
+            (colors.onPrimary, colors.primary),
+            (colors.onPrimaryContainer, colors.primaryContainer),
+            (colors.onSecondaryContainer, colors.secondaryContainer),
+            (colors.secondary, colors.surfaceContainer),
+          ]) {
+            final first = foreground.computeLuminance() + 0.05;
+            final second = background.computeLuminance() + 0.05;
+            final ratio = first >= second ? first / second : second / first;
+            expect(
+              ratio,
+              greaterThanOrEqualTo(4.5),
+              reason: '$palette/$brightness',
+            );
+          }
+        }
+      }
+    },
+  );
+
+  test(
+    'system color refresh works with both brightness modes and fixed choices',
+    () async {
+      final light = MusePalette.forest.colors(Brightness.light);
+      final dark = MusePalette.forest.colors(Brightness.dark);
+      SystemColorSchemes? system;
+      final settings = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+        readSystemColors: () async => system,
       );
-    }
-  });
+      addTearDown(settings.dispose);
+      await settings.restore();
+      await settings.refreshSystemColors();
+      expect(settings.palette, MusePalette.system);
+      expect(settings.hasSystemColors, isFalse);
+      expect(
+        settings.colorsFor(settings.palette, Brightness.light),
+        MusePalette.indigo.colors(Brightness.light),
+      );
+      system = (light: light, dark: dark);
+      await settings.refreshSystemColors();
+      expect(settings.hasSystemColors, isTrue);
+      expect(settings.colorsFor(settings.palette, Brightness.light), light);
+      expect(settings.colorsFor(settings.palette, Brightness.dark), dark);
+      await settings.select(MusePalette.violet);
+      await settings.refreshSystemColors();
+      expect(
+        settings.colorsFor(settings.palette, Brightness.dark),
+        MusePalette.violet.colors(Brightness.dark),
+      );
+    },
+  );
 
   test(
     'appearance restores stable palette and theme mode IDs, falling back independently',
@@ -50,8 +82,8 @@ void main() {
         ('warm-brown', 'light', MusePalette.warmBrown, ThemeMode.light),
         ('forest', 'dark', MusePalette.forest, ThemeMode.dark),
         ('violet', 'system', MusePalette.violet, ThemeMode.system),
-        ('future-palette', 'future-mode', MusePalette.indigo, ThemeMode.system),
-        (null, null, MusePalette.indigo, ThemeMode.system),
+        ('future-palette', 'future-mode', MusePalette.system, ThemeMode.system),
+        (null, null, MusePalette.system, ThemeMode.system),
       ]) {
         final settings = AppearanceSettings(
           readPalette: () async => id,
@@ -73,7 +105,7 @@ void main() {
       );
       addTearDown(broken.dispose);
       await broken.restore();
-      expect(broken.palette, MusePalette.indigo);
+      expect(broken.palette, MusePalette.system);
       expect(broken.themeMode, ThemeMode.light);
 
       final brokenMode = AppearanceSettings(
@@ -185,7 +217,7 @@ void main() {
       expect(find.text('跟随系统自动切换'), findsOneWidget);
       expect(find.byType(RadioListTile<ThemeMode>), findsNothing);
       expect(find.text('配色'), findsOneWidget);
-      expect(find.byType(RadioListTile<MusePalette>), findsNWidgets(4));
+      expect(find.byType(RadioListTile<MusePalette>), findsNWidgets(5));
       await tester.tap(find.text('森林绿'));
       await tester.pumpAndSettle();
       expect(stored, 'forest');
@@ -239,7 +271,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        3,
+        2,
       );
       await tester.tap(find.text('聊天'));
       await tester.pumpAndSettle();

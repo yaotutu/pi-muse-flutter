@@ -264,6 +264,7 @@ void main() {
     addTearDown(appearance.dispose);
     await tester.pumpWidget(
       MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
         home: WorkspacePage(
           chat: chat,
           appearance: appearance,
@@ -274,6 +275,9 @@ void main() {
     await tester.tap(find.text('日程'));
     await tester.pumpAndSettle();
     expect(find.byType(GridView), findsOneWidget);
+    final newItem = find.widgetWithText(FloatingActionButton, '新建事项');
+    expect(newItem.hitTestable(), findsOneWidget);
+    expect(tester.getSize(newItem).height, greaterThanOrEqualTo(48));
     final listBounds = tester.getRect(find.byType(ListView));
     expect(
       listBounds.bottom,
@@ -285,13 +289,20 @@ void main() {
     tester.view.viewInsets = const FakeViewPadding(bottom: 320);
     await tester.pumpAndSettle();
     expect(find.byType(GridView), findsNothing);
+    expect(newItem, findsNothing);
+    expect(find.byType(SearchBar), findsOneWidget);
     expect(find.text('取快递').hitTestable(), findsOneWidget);
     await tester.enterText(find.byType(TextField), '快递');
     await tester.tap(find.byTooltip('应用搜索'));
     tester.view.resetViewInsets();
     await tester.pumpAndSettle();
     expect(api.agendaQueries.any((query) => query?['q'] == '快递'), isTrue);
+    expect(find.byType(GridView), findsNothing);
+    expect(newItem, findsNothing);
+    await tester.tap(find.byTooltip('关闭搜索'));
+    await tester.pumpAndSettle();
     expect(find.byType(GridView), findsOneWidget);
+    expect(newItem.hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -377,6 +388,14 @@ void main() {
       // 事项行和当月日期都在可视范围内。
       expect(firstItem.hitTestable(), findsOneWidget);
       expect(find.text('15').hitTestable(), findsOneWidget);
+      final calendar = tester.widget<GridView>(find.byType(GridView));
+      final cells =
+          calendar.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(cells.mainAxisExtent, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSize(find.byType(GridView)).width / cells.crossAxisCount,
+        greaterThanOrEqualTo(48),
+      );
 
       // 列表独立滚动，左侧月历不动。
       await tester.drag(firstItem, const Offset(0, -400));
@@ -396,6 +415,8 @@ void main() {
       );
 
       // 竖屏宽窗口不分栏，保持单列。
+      await tester.tap(find.byTooltip('关闭搜索'));
+      await tester.pumpAndSettle();
       tester.view.physicalSize = const Size(800, 1200);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('agenda-pane-divider')), findsNothing);

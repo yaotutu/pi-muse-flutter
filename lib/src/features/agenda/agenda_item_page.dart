@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../network/api.dart';
+import '../../shared/window_size.dart';
 import 'agenda_client.dart';
 import 'agenda_controller.dart';
 import 'agenda_models.dart';
@@ -28,12 +29,6 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   final _title = TextEditingController();
   final _notes = TextEditingController();
   final _timeSection = GlobalKey();
-
-  /// 宽横屏分栏的最小可用宽度。
-  static const _wideMinWidth = 640.0;
-
-  /// 宽横屏分栏的最小窗口高度。用窗口高度判断，避免软键盘弹起时布局来回切换。
-  static const _wideMinHeight = 400.0;
 
   AgendaItem? _item;
   bool _loading = true;
@@ -437,14 +432,9 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
     );
   }
 
-  /// 宽横屏才左右分栏：宽度按实际可用空间判断，方向与高度按窗口判断，
-  /// 避免竖屏宽窗口和软键盘弹起时把分栏布局改回单列。
-  bool _isWide(BoxConstraints constraints) {
-    final size = MediaQuery.sizeOf(context);
-    return size.width > size.height &&
-        size.height >= _wideMinHeight &&
-        constraints.maxWidth >= _wideMinWidth;
-  }
+  bool _isWide(BoxConstraints constraints) =>
+      supportsTwoPanes(MediaQuery.sizeOf(context)) &&
+      constraints.maxWidth >= 640;
 
   /// 窄屏与竖屏布局：单列滚动表单。
   Widget _buildNarrowLayout(BuildContext context) {

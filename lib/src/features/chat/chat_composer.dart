@@ -75,29 +75,15 @@ class ChatComposer extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: ListenableBuilder(
             listenable: focus,
-            builder: (context, child) => DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: [
-                  BoxShadow(
-                    color: colors.tertiary.withValues(alpha: 0.07),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+            builder: (context, child) => Material(
+              color: colors.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+                side: focus.hasFocus
+                    ? BorderSide(color: colors.primary, width: 2)
+                    : BorderSide.none,
               ),
-              child: Material(
-                color: colors.surfaceContainerLowest,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(26),
-                  side: BorderSide(
-                    color: focus.hasFocus
-                        ? colors.primary
-                        : colors.outlineVariant,
-                  ),
-                ),
-                child: child,
-              ),
+              child: child,
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -117,11 +103,7 @@ class ChatComposer extends StatelessWidget {
                             dimension: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Icon(
-                            Icons.attach_file,
-                            size: 22,
-                            color: colors.outline,
-                          ),
+                        : const Icon(Icons.attach_file),
                   ),
                   Expanded(
                     child: TextField(
@@ -132,14 +114,12 @@ class ChatComposer extends StatelessWidget {
                       minLines: 1,
                       maxLines: compact ? 3 : 5,
                       textCapitalization: TextCapitalization.sentences,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                        letterSpacing: 0,
-                      ),
+                      style: theme.textTheme.bodyLarge,
                       decoration: InputDecoration(
                         hintText: '发消息给 Pi Muse',
-                        hintStyle: TextStyle(color: colors.outline),
+                        hintStyle: TextStyle(color: colors.onSurfaceVariant),
                         filled: false,
+                        border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
@@ -188,32 +168,19 @@ class ChatComposer extends StatelessWidget {
                           hasContent && chat.canSend ? chat.send : null,
                         ),
                       };
-                      return IconButton(
-                        key: ValueKey(running || busy ? 'stop' : 'send'),
-                        tooltip: label,
-                        onPressed: action,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 48,
-                          height: 48,
+                      return IconButtonTheme(
+                        data: const IconButtonThemeData(
+                          variant: StyleVariant.material3Expressive,
                         ),
-                        icon: DecoratedBox(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: action == null
-                                ? colors.surfaceContainerHigh
-                                : colors.primary,
+                        child: IconButton.filled(
+                          key: ValueKey(running || busy ? 'stop' : 'send'),
+                          tooltip: label,
+                          onPressed: action,
+                          style: IconButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.padded,
+                            visualDensity: VisualDensity.standard,
                           ),
-                          child: SizedBox.square(
-                            dimension: 36,
-                            child: Icon(
-                              icon,
-                              color: action == null
-                                  ? colors.onSurfaceVariant
-                                  : colors.onPrimary,
-                              size: 20,
-                            ),
-                          ),
+                          icon: Icon(icon),
                         ),
                       );
                     },

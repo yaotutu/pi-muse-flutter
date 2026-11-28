@@ -139,13 +139,8 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           Material(
-            color: split ? colors.surface : colors.surfaceContainerLowest,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: split
-                  ? BorderSide.none
-                  : BorderSide(color: colors.outlineVariant),
-            ),
+            color: split ? colors.surface : colors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(24),
             clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -154,11 +149,7 @@ class SettingsPage extends StatelessWidget {
                   if (!split && index > 0)
                     const Divider(height: 1, indent: 16, endIndent: 16),
                   ListTile(
-                    shape: split
-                        ? RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          )
-                        : null,
+                    shape: split ? const StadiumBorder() : null,
                     leading: Icon(entry.icon),
                     title: Text(entry.label),
                     subtitle: entry.enabled ? null : const Text('服务器连接已失效'),

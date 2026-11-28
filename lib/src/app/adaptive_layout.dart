@@ -1,89 +1,56 @@
 import 'package:material_ui/material_ui.dart';
 
-enum WorkspaceNavigationPlacement { bottomBar, rightRail }
+import '../shared/window_size.dart';
 
-/// 根据不受软键盘影响的窗口几何尺寸，统一计算应用外壳的适配规格。
+/// 用窗口尺寸分级，软键盘不会改变导航或分栏模式。
 class WorkspaceLayout {
-  const WorkspaceLayout({
-    required this.size,
-    required this.navigationPlacement,
-    required this.canPinSidebar,
-    required this.useSplitPane,
-    required this.compactToolbar,
-  });
-
-  factory WorkspaceLayout.fromSize(Size size) {
-    final isLandscape = size.width > size.height;
-    final useRightRail = isLandscape && size.width >= 600;
-    final wideLandscape =
-        isLandscape && size.width >= 840 && size.height >= 480;
-    return WorkspaceLayout(
-      size: size,
-      navigationPlacement: useRightRail
-          ? WorkspaceNavigationPlacement.rightRail
-          : WorkspaceNavigationPlacement.bottomBar,
-      canPinSidebar: wideLandscape,
-      useSplitPane: wideLandscape,
-      compactToolbar: useRightRail && size.height < 640,
-    );
-  }
+  const WorkspaceLayout.fromSize(this.size);
 
   static WorkspaceLayout of(BuildContext context) =>
       WorkspaceLayout.fromSize(MediaQuery.sizeOf(context));
 
   final Size size;
-  final WorkspaceNavigationPlacement navigationPlacement;
-  final bool canPinSidebar;
-  final bool useSplitPane;
-  final bool compactToolbar;
 
-  bool get useRightRail =>
-      navigationPlacement == WorkspaceNavigationPlacement.rightRail;
-  double get toolbarHeight => compactToolbar ? 48 : kToolbarHeight;
-  double get sidebarWidth => size.width >= 1100 ? 280 : 248;
-  double get masterPaneWidth => size.width >= 1100 ? 300 : 256;
-  double get railWidth => 72;
+  bool get useRail => size.width >= 600;
+  bool get useSplitPane => supportsTwoPanes(size);
+  double get toolbarHeight => size.height < 480 ? kToolbarHeight : 64;
+  double get sidebarWidth => size.width >= 1200 ? 280 : 240;
+  double get masterPaneWidth => size.width >= 1200 ? 300 : 256;
 }
 
-class WorkspaceDestination {
-  const WorkspaceDestination({
-    required this.icon,
-    Widget? selectedIcon,
-    required this.label,
-    this.enabled = true,
-  }) : selectedIcon = selectedIcon ?? icon;
+enum WorkspaceDestination {
+  chat('聊天', Icons.chat_bubble_outline, Icons.chat_bubble),
+  agenda('日程', Icons.event_note_outlined, Icons.event_note),
+  settings('设置', Icons.settings_outlined, Icons.settings);
 
-  final Widget icon;
-  final Widget selectedIcon;
+  const WorkspaceDestination(this.label, this.icon, this.selectedIcon);
+
   final String label;
-  final bool enabled;
+  final IconData icon;
+  final IconData selectedIcon;
 }
 
-/// 统一托管应用级导航与可选左侧常驻栏，横屏宽窗切至右侧竖排导航轨，竖屏/窄窗保持底栏。
+/// 窄窗使用底栏，较宽的窗口在布局起始侧显示导航轨。
 class AdaptiveWorkspaceShell extends StatefulWidget {
   const AdaptiveWorkspaceShell({
     super.key,
     required this.layout,
-    required this.selectedIndex,
+    required this.destination,
     required this.onDestinationSelected,
-    required this.destinations,
     required this.body,
     this.drawer,
     this.onDrawerChanged,
     this.sidebar,
-    this.sidebarVisible = false,
     this.hideBottomBar = false,
   });
 
   final WorkspaceLayout layout;
-  final int selectedIndex;
-  final ValueChanged<int> onDestinationSelected;
-  final List<WorkspaceDestination> destinations;
+  final WorkspaceDestination destination;
+  final ValueChanged<WorkspaceDestination> onDestinationSelected;
   final Widget body;
   final Widget? drawer;
   final DrawerCallback? onDrawerChanged;
   final Widget? sidebar;
-  final bool sidebarVisible;
   final bool hideBottomBar;
 
   static void openDrawer(BuildContext context) {
@@ -109,225 +76,105 @@ class AdaptiveWorkspaceShell extends StatefulWidget {
 class _AdaptiveWorkspaceShellState extends State<AdaptiveWorkspaceShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  void _select(int index) =>
+      widget.onDestinationSelected(WorkspaceDestination.values[index]);
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final layout = widget.layout;
-    if (!layout.useRightRail) {
-      return Scaffold(
-        key: _scaffoldKey,
-        drawer: widget.drawer,
-        onDrawerChanged: widget.onDrawerChanged,
-        bottomNavigationBar: widget.hideBottomBar
-            ? null
-            : _WorkspaceBottomBar(
-                selectedIndex: widget.selectedIndex,
-                onDestinationSelected: widget.onDestinationSelected,
-                destinations: widget.destinations,
-              ),
-        body: MediaQuery.removeViewInsets(
-          context: context,
-          removeBottom: true,
-          child: widget.body,
-        ),
-      );
-    }
-
-    final colors = Theme.of(context).colorScheme;
-    final showSidebar =
-        layout.canPinSidebar && widget.sidebar != null && widget.sidebarVisible;
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: layout.canPinSidebar ? null : widget.drawer,
-      onDrawerChanged: layout.canPinSidebar ? null : widget.onDrawerChanged,
-      body: MediaQuery.removeViewInsets(
+    final useRail = layout.useRail;
+    final body = Builder(
+      builder: (context) => MediaQuery.removeViewInsets(
         context: context,
         removeBottom: true,
-        child: Builder(
-          builder: (context) => Row(
-            children: [
-              if (showSidebar) ...[
-                SizedBox(
-                  width: layout.sidebarWidth,
-                  child: Material(
-                    color: colors.surface,
-                    child: SafeArea(right: false, child: widget.sidebar!),
+        child: widget.body,
+      ),
+    );
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: useRail ? colors.surfaceContainerLow : null,
+      drawer: layout.useSplitPane ? null : widget.drawer,
+      onDrawerChanged: layout.useSplitPane ? null : widget.onDrawerChanged,
+      bottomNavigationBar: useRail || widget.hideBottomBar
+          ? null
+          : NavigationBar(
+              selectedIndex: widget.destination.index,
+              onDestinationSelected: _select,
+              labelTextStyle: WidgetStateProperty.resolveWith(
+                (states) => theme.textTheme.labelMedium?.copyWith(
+                  color: states.contains(WidgetState.selected)
+                      ? colors.secondary
+                      : colors.onSurfaceVariant,
+                ),
+              ),
+              destinations: [
+                for (final item in WorkspaceDestination.values)
+                  NavigationDestination(
+                    icon: Icon(item.icon),
+                    selectedIcon: Icon(item.selectedIcon),
+                    label: item.label,
                   ),
-                ),
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: colors.outlineVariant,
-                ),
               ],
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeLeft: showSidebar,
-                  removeRight: true,
-                  child: widget.body,
+            ),
+      body: !useRail
+          ? body
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8, bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    NavigationRail(
+                      minWidth: 96,
+                      scrollable: true,
+                      backgroundColor: colors.surfaceContainerLow,
+                      labelType: NavigationRailLabelType.all,
+                      selectedLabelTextStyle: theme.textTheme.labelMedium
+                          ?.copyWith(color: colors.secondary),
+                      selectedIndex: widget.destination.index,
+                      onDestinationSelected: _select,
+                      destinations: [
+                        for (final item in WorkspaceDestination.values)
+                          NavigationRailDestination(
+                            icon: Icon(item.icon),
+                            selectedIcon: Icon(item.selectedIcon),
+                            label: Text(item.label),
+                          ),
+                      ],
+                    ),
+                    if (widget.sidebar case final sidebar?) ...[
+                      SizedBox(
+                        width: layout.sidebarWidth,
+                        child: _WorkspacePane(child: sidebar),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(child: _WorkspacePane(child: body)),
+                  ],
                 ),
               ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: colors.outlineVariant,
-              ),
-              _WorkspaceRightRail(
-                selectedIndex: widget.selectedIndex,
-                onDestinationSelected: widget.onDestinationSelected,
-                destinations: widget.destinations,
-                minWidth: layout.railWidth,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkspaceBottomBar extends StatelessWidget {
-  const _WorkspaceBottomBar({
-    required this.selectedIndex,
-    required this.onDestinationSelected,
-    required this.destinations,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onDestinationSelected;
-  final List<WorkspaceDestination> destinations;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    Color destinationColor(Set<WidgetState> states, Color selected) {
-      if (states.contains(WidgetState.disabled)) {
-        return colors.onSurface.withValues(alpha: 0.38);
-      }
-      return states.contains(WidgetState.selected)
-          ? selected
-          : colors.onSurfaceVariant;
-    }
-
-    final bar = NavigationBarTheme(
-      data: NavigationBarThemeData(
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          return theme.textTheme.labelMedium?.copyWith(
-            fontWeight: states.contains(WidgetState.selected)
-                ? FontWeight.w600
-                : FontWeight.w500,
-            color: destinationColor(states, colors.primary),
-          );
-        }),
-        iconTheme: WidgetStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: destinationColor(states, colors.onSecondaryContainer),
-            size: 24,
-          ),
-        ),
-      ),
-      child: NavigationBar(
-        height: 64,
-        elevation: 0,
-        backgroundColor: colors.surface,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: colors.secondaryContainer,
-        labelPadding: const EdgeInsets.only(top: 2),
-        selectedIndex: selectedIndex,
-        onDestinationSelected: onDestinationSelected,
-        destinations: [
-          for (final dest in destinations)
-            NavigationDestination(
-              icon: dest.icon,
-              selectedIcon: dest.selectedIcon,
-              label: dest.label,
-              enabled: dest.enabled,
             ),
-        ],
-      ),
-    );
-    return Material(
-      color: colors.surface,
-      elevation: 1,
-      shadowColor: colors.shadow.withValues(alpha: 0.13),
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 768),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: bar,
-          ),
-        ),
-      ),
     );
   }
 }
 
-class _WorkspaceRightRail extends StatelessWidget {
-  const _WorkspaceRightRail({
-    required this.selectedIndex,
-    required this.onDestinationSelected,
-    required this.destinations,
-    required this.minWidth,
-  });
+class _WorkspacePane extends StatelessWidget {
+  const _WorkspacePane({required this.child});
 
-  final int selectedIndex;
-  final ValueChanged<int> onDestinationSelected;
-  final List<WorkspaceDestination> destinations;
-  final double minWidth;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Material(
-      color: colors.surface,
-      child: SafeArea(
-        left: false,
-        child: NavigationRail(
-          minWidth: minWidth,
-          backgroundColor: colors.surface,
-          groupAlignment: 0,
-          scrollable: true,
-          labelType: NavigationRailLabelType.all,
-          useIndicator: true,
-          indicatorColor: colors.secondaryContainer,
-          selectedLabelTextStyle: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colors.primary,
-          ),
-          unselectedLabelTextStyle: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: colors.onSurfaceVariant,
-          ),
-          selectedIconTheme: IconThemeData(
-            color: colors.onSecondaryContainer,
-            size: 24,
-          ),
-          unselectedIconTheme: IconThemeData(
-            color: colors.onSurfaceVariant,
-            size: 24,
-          ),
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onDestinationSelected,
-          destinations: [
-            for (final dest in destinations)
-              NavigationRailDestination(
-                icon: dest.icon,
-                selectedIcon: dest.selectedIcon,
-                label: Text(dest.label),
-                disabled: !dest.enabled,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).colorScheme.surface,
+    borderRadius: BorderRadius.circular(24),
+    clipBehavior: Clip.antiAlias,
+    child: child,
+  );
 }
 
-/// 可复用的列表与详情分栏容器：宽横屏左列表右详情，其余场景保持单页列表。
+/// 宽窗并排显示目录与详情，其他尺寸每次显示一页。
 class AdaptiveListDetail extends StatelessWidget {
   const AdaptiveListDetail({
     super.key,
@@ -345,19 +192,19 @@ class AdaptiveListDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!split) return master;
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        SizedBox(width: masterWidth, child: master),
-        VerticalDivider(width: 1, thickness: 1, color: colors.outlineVariant),
-        Expanded(
-          child: MediaQuery.removePadding(
-            context: context,
-            removeLeft: true,
-            child: detail,
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: masterWidth,
+            child: _WorkspacePane(child: master),
           ),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Expanded(child: _WorkspacePane(child: detail)),
+        ],
+      ),
     );
   }
 }

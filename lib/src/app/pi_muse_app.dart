@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -85,7 +86,11 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
   }
 
   Future<void> _restore() async {
-    await Future.wait([_restoreConnection(), _appearance.restore()]);
+    await Future.wait([
+      _restoreConnection(),
+      _appearance.restore(),
+      _appearance.refreshSystemColors(),
+    ]);
     unawaited(SmsSync.resume());
     if (!mounted) return;
     setState(() => _loading = false);
@@ -135,7 +140,10 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
           : DateTime.now().difference(_backgroundedAt!);
       _backgroundedAt = null;
       _chat?.onAppResumed(backgroundDuration);
-      if (!_loading) unawaited(SmsSync.resume());
+      if (!_loading) {
+        unawaited(_appearance.refreshSystemColors());
+        unawaited(SmsSync.resume());
+      }
     }
   }
 
@@ -194,7 +202,8 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
 
   Widget _buildApp() {
     final chat = _chat;
-    final palette = _appearance.palette;
+    ThemeData themeFor(Brightness brightness) =>
+        museTheme(_appearance.colorsFor(_appearance.palette, brightness));
     return MaterialApp(
       navigatorKey: _navigator,
       scaffoldMessengerKey: _messenger,
@@ -203,9 +212,24 @@ class _PiMuseAppState extends State<PiMuseApp> with WidgetsBindingObserver {
       locale: const Locale('zh'),
       supportedLocales: const [Locale('zh')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: museTheme(palette.colors(Brightness.light)),
-      darkTheme: museTheme(palette.colors(Brightness.dark)),
+      theme: themeFor(Brightness.light),
+      darkTheme: themeFor(Brightness.dark),
       themeMode: _appearance.themeMode,
+      builder: (context, child) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final overlay = dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlay.copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarContrastEnforced: false,
+          ),
+          child: child!,
+        );
+      },
       home: Builder(
         builder: (context) {
           if (_loading) {
