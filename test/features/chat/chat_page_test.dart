@@ -1,0 +1,1487 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:pi_muse_flutter/src/network/api.dart';
+import 'package:pi_muse_flutter/src/features/appearance/appearance.dart';
+import 'package:pi_muse_flutter/src/features/chat/chat_controller.dart';
+import 'package:pi_muse_flutter/src/features/chat/chat_page.dart';
+import 'package:pi_muse_flutter/src/features/chat/execution_details_page.dart';
+import 'package:pi_muse_flutter/src/features/chat/visible_text.dart';
+
+import '../../support/session_test_api.dart';
+
+ChatController _chatWithHistory(List<ChatMessage> history) {
+  final address = Uri.parse('http://localhost');
+  final chat = ChatController(MuseApi(address), () => MuseApi(address));
+  chat.synchronized = true;
+  chat.active.revision = 'initial';
+  chat.active.dirty = false;
+  chat.active.history = history;
+  return chat;
+}
+
+class _MessageApi extends SessionTestApi {
+  final runFrames = StreamController<SseFrame>();
+  final writes = <Json>[];
+  final submissions = <Json>[];
+  final stops = <Json>[];
+  Object? reaction;
+  bool saved = false;
+
+  @override
+  Stream<SseFrame> run(Json body) {
+    submissions.add(body);
+    return runFrames.stream;
+  }
+
+  @override
+  Future<Json> post(String path, [Json? body]) async {
+    expect(path, '/api/conversation/stop');
+    stops.add(body!);
+    return {'stopped': false};
+  }
+
+  @override
+  Future<Json> put(String path, Json body) async {
+    const feedbackPath = '/api/sessions/main/messages/answer/feedback';
+    if (body.containsKey('saved')) {
+      expect(path, '$feedbackPath/saved');
+      saved = body['saved'] as bool;
+    } else {
+      expect(path, '$feedbackPath/reaction');
+      reaction = body['reaction'];
+    }
+    writes.add(body);
+    return {'reaction': reaction, 'saved': saved, 'comments': []};
+  }
+}
+
+class _ExecutionApi extends SessionTestApi {
+  final runCursors = <String?>[];
+  final frames = StreamController<SseFrame>();
+  int subscriptions = 0;
+
+  @override
+  Stream<SseFrame> events() {
+    subscriptions++;
+    return frames.stream;
+  }
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    switch (path) {
+      case '/api/runs':
+        expect(query?['sessionId'], mainSession);
+        final cursor = query?['cursor'];
+        runCursors.add(cursor);
+        return {
+          'runs': [
+            if (cursor == null)
+              {
+                'sessionId': mainSession,
+                'runId': 'first-run',
+                'revision': 2,
+                'source': 'chat',
+                'status': 'succeeded',
+                'title': '第一轮调研',
+                'label': '已完成',
+                'startedAt': '2026-01-02T00:00:00.000Z',
+                'endedAt': '2026-01-02T00:00:05.000Z',
+                'steps': [
+                  {
+                    'id': 'step-search',
+                    'parentId': null,
+                    'kind': 'tool',
+                    'title': '搜索网页',
+                    'detail': 'pi muse',
+                    'status': 'succeeded',
+                    'result': '已完成',
+                    'toolName': 'search_web',
+                    'approvalId': null,
+                    'startedAt': '2026-01-02T00:00:00.000Z',
+                    'endedAt': '2026-01-02T00:00:02.000Z',
+                  },
+                ],
+              }
+            else
+              {
+                'sessionId': mainSession,
+                'runId': 'second-run',
+                'revision': 2,
+                'source': 'chat',
+                'status': 'succeeded',
+                'title': '第二轮读取',
+                'label': '已完成',
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:03.000Z',
+                'steps': [
+                  {
+                    'id': 'step',
+                    'parentId': null,
+                    'kind': 'tool',
+                    'title': '读取测试文件',
+                    'detail': 'test.txt',
+                    'status': 'succeeded',
+                    'result': '已完成',
+                    'toolName': 'read',
+                    'approvalId': null,
+                    'startedAt': '2026-01-01T00:00:00.000Z',
+                    'endedAt': '2026-01-01T00:00:02.000Z',
+                  },
+                ],
+              },
+          ],
+          'hasMore': cursor == null,
+          'nextCursor': cursor == null ? 'opaque-cursor' : null,
+        };
+      case '/api/approvals':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'approvals': [
+            {
+              'sessionId': mainSession,
+              'id': 'past',
+              'status': 'approved',
+              'title': '历史文件修改',
+            },
+          ],
+          'nextCursor': null,
+        };
+      case '/api/approvals/past':
+        return {
+          'id': 'past',
+          'sessionId': mainSession,
+          'revision': 3,
+          'status': 'approved',
+          'expiresAt': '2099-01-01T00:00:00Z',
+          'preview': {
+            'scope': 'workspace',
+            'path': 'test.txt',
+            'before': '原文',
+            'after': '新文',
+            'beforeExists': true,
+          },
+          'execution': {'status': 'failed', 'result': '目标文件版本已变化'},
+        };
+      case '/api/jobs':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'jobs': [
+            {
+              'id': 'job-1',
+              'title': '每日早报',
+              'prompt': '整理今天的科技新闻',
+              'kind': 'job',
+              'daily': true,
+              'at': '08:30',
+              'enabled': true,
+              'status': 'scheduled',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+              'error': null,
+            },
+          ],
+        };
+      case '/api/monitors':
+        expect(query?['sessionId'], mainSession);
+        return {
+          'monitors': [
+            {
+              'id': 'mon-1',
+              'title': '官网更新监控',
+              'url': 'https://example.com',
+              'condition': 'change',
+              'intervalMinutes': 30,
+              'status': 'active',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'checks': 2,
+            },
+          ],
+        };
+      default:
+        return super.get(path, query: query);
+    }
+  }
+}
+
+void main() {
+  testWidgets(
+    'execution details open directly and scope execution records and approvals to chat',
+    (tester) async {
+      final api = _ExecutionApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': 'active',
+                'revision': 1,
+                'status': 'running',
+                'label': '正在执行工具',
+                'tools': [
+                  {'label': '读取资料', 'status': 'running'},
+                ],
+              },
+              {
+                'sessionId': 'topic',
+                'runId': 'other',
+                'revision': 1,
+                'status': 'running',
+                'label': '其他会话运行',
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, onReconnect: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '保留草稿');
+      await tester.tap(find.byTooltip('会话详情'));
+      await tester.pumpAndSettle();
+      expect(find.text('会话详情'), findsOneWidget);
+      expect(find.text('执行记录'), findsOneWidget);
+      expect(find.text('审批'), findsOneWidget);
+      expect(find.text('定时任务'), findsOneWidget);
+      expect(find.text('默认会话'), findsNothing);
+      expect(find.text('动态'), findsNothing);
+      expect(find.text('历史'), findsNothing);
+      expect(find.text('读取资料'), findsOneWidget);
+      expect(find.text('任务 · 第一轮调研'), findsOneWidget);
+      expect(find.text('搜索网页 · pi muse'), findsOneWidget);
+      expect(find.text('第一轮调研'), findsNothing);
+      expect(find.text('其他会话运行'), findsNothing);
+      await tester.tap(find.text('加载更多'));
+      await tester.pumpAndSettle();
+      expect(api.runCursors.take(2).toList(), [null, 'opaque-cursor']);
+      expect(find.text('任务 · 第二轮读取'), findsOneWidget);
+      expect(find.text('读取测试文件 · test.txt'), findsOneWidget);
+      expect(find.text('第二轮读取'), findsNothing);
+      await tester.tap(find.widgetWithText(Tab, '审批'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看审批历史'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('历史文件修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('新文'), findsOneWidget);
+      expect(find.text('已批准'), findsOneWidget);
+      expect(find.text('文件写入失败'), findsOneWidget);
+      expect(find.text('批准修改'), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, '定时任务'));
+      await tester.pumpAndSettle();
+      expect(find.text('每日早报'), findsOneWidget);
+      expect(find.textContaining('每天 08:30'), findsOneWidget);
+      expect(find.text('官网更新监控'), findsOneWidget);
+      expect(find.textContaining('每 30 分钟'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('保留草稿'), findsOneWidget);
+      expect(api.subscriptions, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'chat shows only single latest live step while running, opens timeline on tap, and hides when finished',
+    (tester) async {
+      final api = _ExecutionApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, onReconnect: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Active multi-step run surfaces only the single latest step in chat.
+      api.frames.add(
+        const SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': 'live-tool-run',
+            'revision': 2,
+            'status': 'running',
+            'title': '搜索并改写文档',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': 'pi muse docs',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:01.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'approval',
+                'title': '请求修改文件',
+                'detail': 'notes/plan.md',
+                'status': 'waiting_approval',
+                'result': null,
+                'toolName': null,
+                'approvalId': 'past',
+                'startedAt': '2026-01-01T00:00:01.000Z',
+                'endedAt': null,
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('等待审批 · 请求修改文件 · notes/plan.md'), findsOneWidget);
+      expect(find.text('共 2 步'), findsOneWidget);
+      expect(find.text('搜索网页 · pi muse docs'), findsNothing);
+
+      // Tapping the single-line bar opens ExecutionDetailsPage flat timeline.
+      await tester.tap(find.text('等待审批 · 请求修改文件 · notes/plan.md'));
+      await tester.pumpAndSettle();
+      expect(find.text('搜索网页 · pi muse docs'), findsOneWidget);
+      expect(find.text('请求修改文件 · notes/plan.md'), findsOneWidget);
+
+      await tester.tap(find.text('请求修改文件 · notes/plan.md'));
+      await tester.pumpAndSettle();
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('新文'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // Completing normally (Way A) clears the live bar from chat.
+      api.frames.add(
+        const SseFrame(
+          event: 'session_status_updated',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionId': mainSession,
+            'runId': 'live-tool-run',
+            'revision': 3,
+            'status': 'succeeded',
+            'endedAt': '2026-01-01T00:00:03.000Z',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': 'pi muse docs',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-01-01T00:00:00.000Z',
+                'endedAt': '2026-01-01T00:00:01.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'approval',
+                'title': '请求修改文件',
+                'detail': 'notes/plan.md',
+                'status': 'succeeded',
+                'result': '已批准',
+                'toolName': null,
+                'approvalId': 'past',
+                'startedAt': '2026-01-01T00:00:01.000Z',
+                'endedAt': '2026-01-01T00:00:02.000Z',
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('共 2 步'), findsNothing);
+      expect(find.text('已执行 2 步'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('message actions copy, react, quote and stop from the composer', (
+    tester,
+  ) async {
+    final api = _MessageApi();
+    final chat = ChatController(api, () => api)..synchronized = true;
+    addTearDown(chat.dispose);
+    final clipboard = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    chat.active
+      ..binding = 'binding'
+      ..revision = 'empty'
+      ..dirty = false
+      ..history = const [
+        ChatMessage('question', 'user', 'Original question'),
+        ChatMessage(
+          'answer',
+          'assistant',
+          '<think>Hidden</think>**Visible reply**',
+          feedbackAvailable: true,
+        ),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatPage(chat: chat, onReconnect: () {}),
+      ),
+    );
+
+    Finder action(String id, String label) => find.descendant(
+      of: find.byKey(ValueKey(id)),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == label,
+      ),
+    );
+
+    Future<void> tapAction(String id, String label) async {
+      await tester.tap(action(id, label));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.byTooltip('消息操作'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('question')),
+        matching: find.byType(IconButton),
+      ),
+      findsNothing,
+    );
+    await tapAction('answer', '复制');
+    expect(clipboard, ['**Visible reply**']);
+    final snacks = tester.state<ScaffoldMessengerState>(
+      find.byType(ScaffoldMessenger),
+    );
+    snacks.clearSnackBars();
+    await tester.pumpAndSettle();
+    await tapAction('answer', '点赞');
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销点赞')).isSelected,
+      true,
+    );
+    await tapAction('answer', '收藏');
+    expect(
+      tester.widget<IconButton>(action('answer', '取消收藏')).isSelected,
+      true,
+    );
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销点赞')).isSelected,
+      true,
+    );
+    await tapAction('answer', '不喜欢');
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销不喜欢')).isSelected,
+      true,
+    );
+    expect(
+      tester.widget<IconButton>(action('answer', '取消收藏')).isSelected,
+      true,
+    );
+    await tapAction('answer', '取消收藏');
+    expect(tester.widget<IconButton>(action('answer', '收藏')).isSelected, false);
+    expect(
+      tester.widget<IconButton>(action('answer', '撤销不喜欢')).isSelected,
+      true,
+    );
+    await tapAction('answer', '撤销不喜欢');
+    expect(
+      tester.widget<IconButton>(action('answer', '不喜欢')).isSelected,
+      false,
+    );
+    expect(api.writes, [
+      {'piSessionId': 'binding', 'reaction': 'like'},
+      {'piSessionId': 'binding', 'saved': true},
+      {'piSessionId': 'binding', 'reaction': 'dislike'},
+      {'piSessionId': 'binding', 'saved': false},
+      {'piSessionId': 'binding', 'reaction': null},
+    ]);
+
+    final composer = find.byType(TextField);
+    await tester.enterText(composer, 'Draft question');
+    await tapAction('answer', '引用回复');
+    expect(find.text('助手回复'), findsOneWidget);
+    expect(find.text('**Visible reply**'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(composer).controller!.text,
+      'Draft question',
+    );
+    await tester.tap(find.byTooltip('移除引用'));
+    await tester.pumpAndSettle();
+    expect(find.text('助手回复'), findsNothing);
+    await tester.tap(find.byTooltip('发送'));
+    await tester.pump();
+    expect(find.byTooltip('停止回复'), findsOneWidget);
+    await tester.enterText(composer, 'New question');
+    await tester.pump();
+    final interrupt = find.byTooltip('停止并发送');
+    expect(interrupt, findsOneWidget);
+    await tester.tap(interrupt);
+    await tester.pumpAndSettle();
+    expect(api.stops.single['runId'], api.submissions.single['runId']);
+    expect(api.submissions, hasLength(1));
+    expect(tester.widget<TextField>(composer).controller!.text, 'New question');
+    await api.runFrames.close();
+    await tester.pumpAndSettle();
+  });
+
+  test('assistant projection hides incomplete and nested thinking blocks', () {
+    expect(visibleAssistantText('Hello <thi'), 'Hello ');
+    expect(visibleAssistantText('<think>private'), '');
+    expect(
+      visibleAssistantText('<THINK>hidden <think>nested</think></THINK>\n你好'),
+      '你好',
+    );
+    expect(visibleAssistantText('`<think>` and 1 < 2'), '`<think>` and 1 < 2');
+    const code = '```text\n<think>literal\n```\n<think>hidden';
+    expect(visibleAssistantText(code), '```text\n<think>literal\n```\n');
+  });
+
+  testWidgets('a chat that fits does not overscroll from a message', (
+    tester,
+  ) async {
+    final chat = _chatWithHistory([
+      const ChatMessage('reply', 'assistant', 'A short reply'),
+    ]);
+    addTearDown(chat.dispose);
+    final overscroll = <OverscrollNotification>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: NotificationListener<OverscrollNotification>(
+          onNotification: (notification) {
+            overscroll.add(notification);
+            return false;
+          },
+          child: ChatPage(chat: chat, onReconnect: () async {}),
+        ),
+      ),
+    );
+    final list = find.byType(ListView);
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    expect(position.maxScrollExtent, 0);
+    expect(
+      tester.getTopLeft(list).dy,
+      tester.getBottomLeft(find.byType(AppBar)).dy,
+    );
+    await tester.drag(find.text('A short reply'), const Offset(0, -90));
+    await tester.pumpAndSettle();
+    expect(overscroll, isEmpty);
+    expect(position.pixels, 0);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets('vertical chat drags work from text, code and message gaps', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final chat = _chatWithHistory(
+      List.generate(
+        8,
+        (index) => [
+          ChatMessage('user-$index', 'user', 'User message $index'),
+          ChatMessage(
+            'reply-$index',
+            'assistant',
+            'Assistant reply $index\n\n```text\n${'wide code ' * 16}$index\n```',
+          ),
+        ],
+      ).expand((pair) => pair).toList(),
+    );
+    addTearDown(chat.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ChatPage(chat: chat, onReconnect: () async {}),
+      ),
+    );
+    final list = find.byType(ListView);
+    final scrollables = find.descendant(
+      of: list,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollables.first).position;
+    expect(position.pixels, 0);
+    const initialOffset = 90.0;
+    position.jumpTo(initialOffset);
+    await tester.pumpAndSettle();
+    final user = find.text('User message 7').hitTestable();
+    final reply = find.text('Assistant reply 7').hitTestable();
+    final code = find.text('${'wide code ' * 16}7');
+    final codeViewport = find.ancestor(
+      of: code,
+      matching: find.byType(SingleChildScrollView),
+    );
+    final gap = Offset(
+      tester.getCenter(list).dx,
+      (tester.getBottomLeft(find.byKey(const ValueKey('user-7'))).dy +
+              tester.getTopLeft(find.byKey(const ValueKey('reply-7'))).dy) /
+          2,
+    );
+    final starts = {
+      'message gap': gap,
+      'user text': tester.getCenter(user),
+      'assistant text': tester.getCenter(reply),
+      'code text': tester
+          .getRect(code)
+          .intersect(tester.getRect(codeViewport))
+          .center,
+    };
+    final distances = <String, double>{};
+    for (final start in starts.entries) {
+      final gesture = await tester.startGesture(start.value);
+      // Holding before moving used to activate selection instead of scrolling.
+      await tester.pump(const Duration(milliseconds: 720));
+      for (var step = 0; step < 5; step++) {
+        await gesture.moveBy(const Offset(0, -10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      distances[start.key] = initialOffset - position.pixels;
+      await gesture.up();
+      await tester.pumpAndSettle();
+      position.jumpTo(initialOffset);
+      await tester.pumpAndSettle();
+    }
+    expect(
+      distances.values,
+      everyElement(closeTo(50, 1)),
+      reason: '$distances',
+    );
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+    expect(find.byType(SelectionArea), findsNothing);
+    final horizontal = tester
+        .state<ScrollableState>(
+          find
+              .descendant(of: codeViewport, matching: find.byType(Scrollable))
+              .first,
+        )
+        .position;
+    final codeGesture = await tester.startGesture(starts['code text']!);
+    for (var step = 0; step < 11; step++) {
+      await codeGesture.moveBy(const Offset(-10, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final codeTravel = horizontal.pixels;
+    await codeGesture.up();
+    await tester.pumpAndSettle();
+    expect(codeTravel, greaterThan(80));
+    expect(position.pixels, closeTo(initialOffset, 1));
+
+    final select = find.byTooltip('选择文字').hitTestable().first;
+    final fromButton = await tester.startGesture(tester.getCenter(select));
+    for (var step = 0; step < 5; step++) {
+      await fromButton.moveBy(const Offset(0, -10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(position.pixels, closeTo(initialOffset - 50, 1));
+    await fromButton.up();
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsNothing);
+    position.jumpTo(initialOffset);
+    await tester.pumpAndSettle();
+
+    await tester.tap(select);
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsNothing);
+    expect(position.pixels, closeTo(initialOffset, 1));
+    expect(tester.takeException(), isNull);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets('both screen halves move the transcript in both directions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final chat = _chatWithHistory([
+      for (var i = 0; i < 16; i++) ...[
+        ChatMessage('user-$i', 'user', 'Question $i'),
+        ChatMessage(
+          'reply-$i',
+          'assistant',
+          'Answer $i\n\nA paragraph with a few words.\n\nAnother paragraph.',
+        ),
+      ],
+    ]);
+    addTearDown(chat.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatPage(chat: chat, onReconnect: () {}),
+      ),
+    );
+    final list = find.byType(ListView);
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    expect(position.pixels, 0);
+    expect(
+      position.maxScrollExtent,
+      greaterThan(2 * position.viewportDimension),
+    );
+
+    Offset textInHalf({required bool upper}) {
+      final view = tester.getRect(list).deflate(24);
+      final half = upper
+          ? Rect.fromLTRB(view.left, view.top, view.right, view.center.dy)
+          : Rect.fromLTRB(view.left, view.center.dy, view.right, view.bottom);
+      final textWidgets = find
+          .descendant(
+            of: list,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Text &&
+                  RegExp(
+                    r'^(?:(?:Question|Answer) \d+|A paragraph with a few words\.|Another paragraph\.)$',
+                  ).hasMatch(
+                    widget.data ?? widget.textSpan?.toPlainText() ?? '',
+                  ),
+            ),
+          )
+          .hitTestable();
+      for (final element in textWidgets.evaluate()) {
+        final text = find.byElementPredicate(
+          (candidate) => identical(candidate, element),
+        );
+        final rect = tester.getRect(text);
+        if (half.contains(rect.center)) return rect.center;
+      }
+      throw StateError(
+        'No message text found in ${upper ? 'upper' : 'lower'} half',
+      );
+    }
+
+    Future<void> checkDrag(
+      double origin,
+      double dy, {
+      required bool upper,
+    }) async {
+      position.jumpTo(origin);
+      await tester.pumpAndSettle();
+      final start = textInHalf(upper: upper);
+      final gesture = await tester.startGesture(start);
+      for (var step = 0; step < 12; step++) {
+        await gesture.moveBy(Offset(0, dy / 12));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final moved = position.pixels - origin;
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        moved,
+        closeTo(dy, 1),
+        reason: '${upper ? 'upper' : 'lower'} message from $origin',
+      );
+    }
+
+    for (final upper in [true, false]) {
+      await checkDrag(0, 280, upper: upper);
+      expect(find.text('Answer 14').hitTestable(), findsOneWidget);
+      await checkDrag(440, -120, upper: upper);
+      await checkDrag(440, 120, upper: upper);
+    }
+
+    // The composer keyboard changes the available height, not the scroll owner.
+    addTearDown(tester.view.resetViewInsets);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 250);
+    await tester.pumpAndSettle();
+    await checkDrag(440, 120, upper: false);
+    final readingOffset = position.pixels;
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(position.pixels, closeTo(readingOffset, 1));
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
+
+  testWidgets(
+    'a barely overflowing transcript stops at either edge without stretching',
+    (tester) async {
+      // 直接测试聊天页时，视口高度不含应用底部导航栏。
+      tester.view.physicalSize = const Size(360, 440);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final chat = _chatWithHistory([
+        const ChatMessage('older', 'assistant', 'Older\nLine two\nLine three'),
+        const ChatMessage('newer', 'assistant', 'Newer\nLine two\nLine three'),
+      ]);
+      addTearDown(chat.dispose);
+      final boundaries = <OverscrollNotification>[];
+      final indicators = <OverscrollIndicatorNotification>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NotificationListener<OverscrollNotification>(
+            onNotification: (notification) {
+              if (notification.depth == 0) boundaries.add(notification);
+              return false;
+            },
+            child: NotificationListener<OverscrollIndicatorNotification>(
+              onNotification: (notification) {
+                if (notification.depth == 0) indicators.add(notification);
+                return false;
+              },
+              child: ChatPage(chat: chat, onReconnect: () {}),
+            ),
+          ),
+        ),
+      );
+      final list = find.byType(ListView);
+      final position = tester
+          .state<ScrollableState>(
+            find.descendant(of: list, matching: find.byType(Scrollable)).first,
+          )
+          .position;
+      final end = position.maxScrollExtent;
+      expect(end, inExclusiveRange(0, 130));
+      for (final (offset, dy, message) in [
+        (0.0, -170.0, 'Newer\nLine two\nLine three'),
+        (end, 170.0, 'Older\nLine two\nLine three'),
+      ]) {
+        position.jumpTo(offset);
+        await tester.pumpAndSettle();
+        boundaries.clear();
+        indicators.clear();
+        await tester.drag(find.text(message), Offset(0, dy));
+        await tester.pumpAndSettle();
+        expect(position.pixels, closeTo(offset, 0.1));
+        expect(boundaries, isNotEmpty);
+        expect(
+          indicators.where((notification) => notification.accepted),
+          isEmpty,
+        );
+      }
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets('chat dates come from saved message metadata', (tester) async {
+    final address = Uri.parse('http://localhost');
+    final chat = ChatController(MuseApi(address), () => MuseApi(address));
+    addTearDown(chat.dispose);
+    chat.synchronized = true;
+    final localTime = DateTime(2025, 3, 4, 10, 15);
+    ChatMessage saved(String id, String role, String text, DateTime time) =>
+        ChatMessage.fromJson({
+          'id': id,
+          'role': role,
+          'content': text,
+          'metadata': {'createdAt': time.toUtc().toIso8601String()},
+        });
+    chat.active.history = [
+      saved('1', 'user', '问', localTime),
+      saved('2', 'assistant', '答', localTime.add(const Duration(minutes: 1))),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        home: ChatPage(chat: chat, onReconnect: () {}),
+      ),
+    );
+    final localizations = MaterialLocalizations.of(
+      tester.element(find.byType(AppBar)),
+    );
+    final day = localizations.formatShortDate(localTime);
+    final date = find.text('$day 10:15');
+    expect(date, findsOneWidget);
+    expect(find.text('$day 10:16'), findsNothing);
+    expect(
+      tester.getTopLeft(date).dy - tester.getBottomLeft(find.byType(AppBar)).dy,
+      lessThan(24),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('approval banner opens the full preview at large text sizes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final address = Uri.parse('http://localhost');
+    final chat = ChatController(MuseApi(address), () => MuseApi(address));
+    addTearDown(chat.dispose);
+    chat.synchronized = true;
+    chat.approvals['approval'] = Approval.fromJson({
+      'id': 'approval',
+      'sessionId': mainSession,
+      'revision': 1,
+      'status': 'pending',
+      'preview': {
+        'scope': 'workspace',
+        'path': 'files/check.txt',
+        'before': '',
+        'after': 'test',
+        'beforeExists': false,
+      },
+      'expiresAt': '2099-01-01T00:00:00Z',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: museTheme(MusePalette.indigo.colors(Brightness.light)),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: ChatPage(chat: chat, onReconnect: () {}),
+      ),
+    );
+    final banner = find.byType(MaterialBanner);
+    final action = find.widgetWithText(TextButton, '查看修改');
+    expect(find.descendant(of: banner, matching: action), findsOneWidget);
+    expect(find.text('有文件修改待确认'), findsOneWidget);
+    expect(tester.getSize(action).height, greaterThanOrEqualTo(48));
+    expect(tester.takeException(), isNull);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('确认文件修改'), findsOneWidget);
+    expect(find.text('files/check.txt'), findsOneWidget);
+    expect(find.text('修改前'), findsOneWidget);
+    expect(find.text('修改后'), findsOneWidget);
+    expect(find.text('test'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'shows processing card and stop button for restored run, and terminal notice on failure',
+    (tester) async {
+      final api = _RestoredRunApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [
+              {
+                'sessionId': mainSession,
+                'runId': 'restored-run',
+                'revision': 1,
+                'status': 'running',
+                'label': '正在调用模型',
+                'tools': [
+                  {'label': '读取笔记', 'status': 'running'},
+                ],
+              },
+            ],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, onReconnect: () {}),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('读取笔记'), findsOneWidget);
+      expect(find.byTooltip('停止回复'), findsOneWidget);
+
+      // 模拟远端运行失败结束并写入 lastRun
+      api.lastRun = {
+        'sessionId': mainSession,
+        'runId': 'restored-run',
+        'revision': 2,
+        'status': 'failed',
+        'endedAt': '2026-11-26T00:00:00Z',
+      };
+      api.frames.add(
+        SseFrame(
+          event: 'session_status_updated',
+          data: {'instanceId': 'test-instance', ...api.lastRun!},
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('上一轮回复未能完成，你可以重新发送或继续对话'), findsOneWidget);
+      expect(find.byTooltip('发送'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'shows timeout notice even when last saved message is a partial assistant transition',
+    (tester) async {
+      final api = _PartialTimeoutApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, onReconnect: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('我先去查一下资料。'), findsOneWidget);
+      expect(find.text('处理超时，未生成完整回复'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'inline file and proposal approval cards render in chat, expand diff, confirm and update in place',
+    (tester) async {
+      final api = _InlineApprovalApi();
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatPage(chat: chat, onReconnect: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final longAfter = 'LINE\n' * 80;
+      api.frames.add(
+        SseFrame(
+          event: 'approval_pending',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'ap-file',
+            'sessionId': mainSession,
+            'runId': 'run-1',
+            'revision': 1,
+            'kind': 'file_write',
+            'status': 'pending',
+            'title': '写入 shared/plan.md',
+            'preview': {
+              'type': 'file_diff',
+              'scope': 'workspace',
+              'path': 'shared/plan.md',
+              'before': '',
+              'after': longAfter,
+              'beforeExists': false,
+            },
+            'execution': null,
+            'expiresAt': '2099-01-01T00:00:00.000Z',
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('写入 shared/plan.md'), findsOneWidget);
+      expect(find.text('待你确认'), findsOneWidget);
+      expect(find.text('展开完整对比'), findsOneWidget);
+      expect(find.text('修改后'), findsNothing);
+
+      await tester.tap(find.text('展开完整对比'));
+      await tester.pumpAndSettle();
+      expect(find.text('修改后'), findsOneWidget);
+
+      await tester.tap(find.text('批准修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('批准这次修改？'), findsOneWidget);
+
+      api.nextResponse = {
+        'id': 'ap-file',
+        'sessionId': mainSession,
+        'runId': 'run-1',
+        'revision': 2,
+        'kind': 'file_write',
+        'status': 'approved',
+        'title': '写入 shared/plan.md',
+        'preview': {
+          'type': 'file_diff',
+          'scope': 'workspace',
+          'path': 'shared/plan.md',
+          'before': '',
+          'after': longAfter,
+          'beforeExists': false,
+        },
+        'execution': {'status': 'succeeded', 'result': '已写入目标文件'},
+        'expiresAt': '2099-01-01T00:00:00.000Z',
+      };
+      await tester.tap(find.text('确认批准'));
+      await tester.pumpAndSettle();
+      expect(api.decisions, [('ap-file', 'approve')]);
+      expect(find.text('已批准'), findsOneWidget);
+      expect(find.textContaining('文件已写入'), findsOneWidget);
+
+      // Next: generic proposal approval renders inline summary + items and custom button.
+      api.frames.add(
+        const SseFrame(
+          event: 'approval_pending',
+          data: {
+            'instanceId': 'test-instance',
+            'id': 'ap-prop',
+            'sessionId': mainSession,
+            'runId': 'run-2',
+            'revision': 1,
+            'kind': 'proposal',
+            'status': 'pending',
+            'title': '采纳一条学习偏好',
+            'preview': {
+              'type': 'proposal',
+              'category': 'habit_learning',
+              'summary': '下次总结先列三条结论。',
+              'target': 'USER.md',
+              'items': [
+                {'label': '观察来源', 'value': '最近对话偏好'},
+              ],
+              'confirmLabel': '采纳',
+              'denyLabel': '暂不',
+            },
+            'execution': null,
+            'expiresAt': '2099-01-01T00:00:00.000Z',
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('采纳一条学习偏好'), findsOneWidget);
+      expect(find.text('下次总结先列三条结论。'), findsOneWidget);
+      expect(find.text('最近对话偏好'), findsOneWidget);
+      expect(find.text('采纳'), findsOneWidget);
+
+      await tester.tap(find.text('暂不'));
+      await tester.pumpAndSettle();
+      api.nextResponse = {
+        'id': 'ap-prop',
+        'sessionId': mainSession,
+        'runId': 'run-2',
+        'revision': 2,
+        'kind': 'proposal',
+        'status': 'denied',
+        'title': '采纳一条学习偏好',
+        'preview': {
+          'type': 'proposal',
+          'category': 'habit_learning',
+          'summary': '下次总结先列三条结论。',
+          'target': 'USER.md',
+          'items': [
+            {'label': '观察来源', 'value': '最近对话偏好'},
+          ],
+          'confirmLabel': '采纳',
+          'denyLabel': '暂不',
+        },
+        'execution': null,
+        'expiresAt': '2099-01-01T00:00:00.000Z',
+      };
+      await tester.tap(find.text('确认拒绝'));
+      await tester.pumpAndSettle();
+      expect(api.decisions, [('ap-file', 'approve'), ('ap-prop', 'deny')]);
+      expect(find.text('已拒绝'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'ExecutionDetailsPage hides plain-chat no-op runs, shows empty hint, and surfaces concrete step summary on cards',
+    (tester) async {
+      final api = _CustomRunsApi(
+        runs: [
+          {
+            'sessionId': mainSession,
+            'runId': 'plain-finished',
+            'revision': 2,
+            'source': 'chat',
+            'status': 'succeeded',
+            'title': '1+1等于几',
+            'label': '执行完成',
+            'startedAt': '2026-11-26T08:00:00.000Z',
+            'endedAt': '2026-11-26T08:00:02.000Z',
+            'steps': <Json>[],
+          },
+          {
+            'sessionId': mainSession,
+            'runId': 'legacy-placeholder',
+            'revision': 2,
+            'source': 'chat',
+            'status': 'cancelled',
+            'title': '正在处理请求',
+            'label': '执行已停止',
+            'startedAt': '2026-11-25T08:00:00.000Z',
+            'endedAt': '2026-11-25T08:00:05.000Z',
+            'steps': <Json>[],
+          },
+          {
+            'sessionId': mainSession,
+            'runId': 'real-tool-run',
+            'revision': 3,
+            'source': 'chat',
+            'status': 'succeeded',
+            'title': '查一下北京天气并记草稿',
+            'label': '搜索网页（北京天气） → 写入文件（shared/weather.md）·已拒绝',
+            'startedAt': '2026-11-26T09:05:00.000Z',
+            'endedAt': '2026-11-26T09:05:10.000Z',
+            'steps': [
+              {
+                'id': 's1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '搜索网页',
+                'detail': '北京天气',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'search_web',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:00.000Z',
+                'endedAt': '2026-11-26T09:05:03.000Z',
+              },
+              {
+                'id': 's2',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '写入文件',
+                'detail': 'shared/weather.md',
+                'status': 'denied',
+                'result': '操作被拒绝',
+                'toolName': 'write',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:03.000Z',
+                'endedAt': '2026-11-26T09:05:10.000Z',
+              },
+              {
+                'id': 's3',
+                'parentId': 's2',
+                'kind': 'file_commit',
+                'title': '文件提交',
+                'detail': 'shared/weather.md',
+                'status': 'denied',
+                'result': '未批准，未写入文件',
+                'toolName': null,
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:05:10.000Z',
+                'endedAt': '2026-11-26T09:05:10.000Z',
+              },
+            ],
+          },
+          {
+            'sessionId': mainSession,
+            'runId': 'job-run',
+            'revision': 4,
+            'source': 'job',
+            'status': 'succeeded',
+            'title': '每日新闻巡检',
+            'label': '已完成',
+            'startedAt': '2026-11-26T09:15:00.000Z',
+            'endedAt': '2026-11-26T09:15:05.000Z',
+            'steps': [
+              {
+                'id': 'j1',
+                'parentId': null,
+                'kind': 'tool',
+                'title': '抓取订阅源',
+                'detail': 'RSS 3 条',
+                'status': 'succeeded',
+                'result': '已完成',
+                'toolName': 'rss',
+                'approvalId': null,
+                'startedAt': '2026-11-26T09:15:00.000Z',
+                'endedAt': '2026-11-26T09:15:05.000Z',
+              },
+            ],
+          },
+        ],
+      );
+      final chat = ChatController(api, () => api);
+      addTearDown(chat.dispose);
+      chat.start();
+      api.frames.add(
+        const SseFrame(
+          event: 'ready',
+          data: {
+            'instanceId': 'test-instance',
+            'sessionStatuses': [],
+            'pendingApprovals': [],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExecutionDetailsPage(
+            chat: chat,
+            sessionId: mainSession,
+            openApproval: (_, _, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('默认会话'), findsNothing);
+      expect(find.text('1+1等于几'), findsNothing);
+      expect(find.text('正在处理请求'), findsNothing);
+      expect(find.text('任务 · 查一下北京天气并记草稿'), findsOneWidget);
+      expect(find.text('搜索网页 · 北京天气'), findsOneWidget);
+      expect(find.text('写入文件 · shared/weather.md'), findsOneWidget);
+      expect(find.text('已拒绝 · 未批准，未写入文件'), findsOneWidget);
+      expect(find.text('文件提交 · shared/weather.md'), findsNothing);
+      expect(find.text('定时任务 · 每日新闻巡检'), findsOneWidget);
+      expect(find.text('抓取订阅源 · RSS 3 条'), findsOneWidget);
+
+      // Empty runs show helpful explanation instead of a blank tile.
+      api.runs = <Json>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExecutionDetailsPage(
+            key: const ValueKey('empty-page'),
+            chat: chat,
+            sessionId: 'empty-session',
+            openApproval: (_, _, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('暂无执行记录'), findsOneWidget);
+      expect(find.textContaining('普通纯文字问答不记入此处'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+}
+
+class _CustomRunsApi extends _ExecutionApi {
+  _CustomRunsApi({required this.runs});
+  List<Json> runs;
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/runs') {
+      return {
+        'instanceId': 'test-instance',
+        'runs': runs,
+        'hasMore': false,
+        'nextCursor': null,
+      };
+    }
+    return super.get(path, query: query);
+  }
+}
+
+class _InlineApprovalApi extends _ExecutionApi {
+  final decisions = <(String, String)>[];
+  late Json nextResponse;
+
+  @override
+  Future<Json> post(String path, [Json? body]) async {
+    final match = RegExp(r'^/api/approvals/([^/]+)/decision$').firstMatch(path);
+    if (match != null) {
+      decisions.add((match.group(1)!, body!['decision'] as String));
+      return nextResponse;
+    }
+    return super.post(path, body);
+  }
+}
+
+class _PartialTimeoutApi extends _ExecutionApi {
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/conversation') {
+      return {
+        'sessionId': query?['sessionId'],
+        'piSessionId': 'binding',
+        'revision': 'rev-partial',
+        'messages': [
+          {
+            'id': 'u1',
+            'role': 'user',
+            'content': '帮我深入调研一下',
+            'metadata': {'runId': 'timeout-run'},
+          },
+          {
+            'id': 'assistant-timeout-run',
+            'role': 'assistant',
+            'content': '我先去查一下资料。',
+            'metadata': {'runId': 'timeout-run'},
+          },
+        ],
+        'lastRun': {
+          'sessionId': mainSession,
+          'runId': 'timeout-run',
+          'revision': 5,
+          'status': 'failed',
+          'label': '处理超时，未生成完整回复',
+          'endedAt': '2026-11-26T08:12:23Z',
+        },
+      };
+    }
+    return super.get(path, query: query);
+  }
+}
+
+class _RestoredRunApi extends _ExecutionApi {
+  Json? lastRun;
+
+  @override
+  Future<Json> get(String path, {Map<String, String>? query}) async {
+    if (path == '/api/conversation') {
+      return {
+        'sessionId': query?['sessionId'],
+        'piSessionId': 'binding',
+        'revision': 'rev1',
+        'messages': [
+          {'id': 'u1', 'role': 'user', 'content': '帮我查一下'},
+        ],
+        'lastRun': lastRun,
+      };
+    }
+    return super.get(path, query: query);
+  }
+}

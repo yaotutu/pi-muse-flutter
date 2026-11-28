@@ -1,6 +1,12 @@
 package com.pimuse.pi_muse_flutter
 
 import android.content.Intent
+import com.pimuse.pi_muse_flutter.appupdate.AppUpdateChannel
+import com.pimuse.pi_muse_flutter.attachments.ATTACHMENT_PICK_REQUEST_CODE
+import com.pimuse.pi_muse_flutter.attachments.AttachmentPicker
+import com.pimuse.pi_muse_flutter.sms.SMS_HISTORY_PERMISSION_REQUEST
+import com.pimuse.pi_muse_flutter.sms.SMS_PERMISSION_REQUEST
+import com.pimuse.pi_muse_flutter.sms.SmsSyncChannel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 

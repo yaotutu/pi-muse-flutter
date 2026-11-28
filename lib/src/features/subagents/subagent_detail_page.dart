@@ -1,0 +1,545 @@
+import 'package:material_ui/material_ui.dart';
+
+import '../../network/api.dart';
+import 'subagent_widgets.dart';
+import 'subagents_client.dart';
+import 'subagent_models.dart';
+
+class SubagentDetailPage extends StatefulWidget {
+  const SubagentDetailPage({
+    super.key,
+    required MuseApi api,
+    required this.summary,
+    SubagentsClient? client,
+  }) : _api = api,
+       _client = client;
+
+  final MuseApi _api;
+  final SubagentsClient? _client;
+  final SubagentSummary summary;
+
+  @override
+  State<SubagentDetailPage> createState() => _SubagentDetailPageState();
+}
+
+class _SubagentDetailPageState extends State<SubagentDetailPage> {
+  late final SubagentsClient _client =
+      widget._client ?? SubagentsClient(widget._api);
+  SubagentDetail? _detail;
+  SubagentMcpSelection? _mcpSelection;
+  Object? _error;
+  bool _loading = true;
+  bool _savingEnabled = false;
+  bool _savingMcp = false;
+  bool _savingInstructions = false;
+  bool _instructionsDirty = false;
+  late final TextEditingController _instructionsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _instructionsController = TextEditingController();
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    _instructionsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reload({bool preserveDraft = false}) async {
+    if (_detail == null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final results = await Future.wait([
+        _client.getDetail(widget.summary.id),
+        _client.getMcpSelection(widget.summary.id),
+      ]);
+      if (!mounted) return;
+      final detail = results[0] as SubagentDetail;
+      final selection = results[1] as SubagentMcpSelection;
+      if (!preserveDraft && detail.userInstructions != null) {
+        _instructionsController.text = detail.userInstructions!.instructions;
+        _instructionsDirty = false;
+      }
+      setState(() {
+        _detail = detail;
+        _mcpSelection = selection;
+        _error = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      if (_detail == null) {
+        setState(() {
+          _error = error;
+          _loading = false;
+        });
+      } else {
+        setState(() => _loading = false);
+        _showMessage(subagentErrorMessage(error));
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleEnabled(bool enabled) async {
+    if (_savingEnabled || _detail == null) return;
+    setState(() => _savingEnabled = true);
+    try {
+      final updated = await _client.setEnabled(widget.summary.id, enabled);
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _savingEnabled = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingEnabled = false);
+      _showMessage(subagentErrorMessage(error));
+    }
+  }
+
+  Future<void> _toggleMcpServer(String serverName, bool enabled) async {
+    final selection = _mcpSelection;
+    if (selection == null || _savingMcp) return;
+    final next = Set<String>.from(selection.enabledServers);
+    if (enabled) {
+      next.add(serverName);
+    } else {
+      next.remove(serverName);
+    }
+    final sorted = next.toList()..sort();
+    setState(() => _savingMcp = true);
+    try {
+      final updated = await _client.updateMcpSelection(
+        widget.summary.id,
+        sorted,
+      );
+      if (!mounted) return;
+      setState(() {
+        _mcpSelection = updated;
+        _savingMcp = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingMcp = false);
+      _showMessage(subagentErrorMessage(error));
+    }
+  }
+
+  Future<void> _saveInstructions() async {
+    final detail = _detail;
+    final current = detail?.userInstructions;
+    if (detail == null || current == null || _savingInstructions) return;
+    setState(() => _savingInstructions = true);
+    try {
+      final updated = await _client.updateUserInstructions(
+        detail.summary.id,
+        _instructionsController.text,
+        current.path,
+      );
+      if (!mounted) return;
+      _instructionsController.text = updated.instructions;
+      setState(() {
+        _detail = SubagentDetail(
+          summary: detail.summary,
+          prompts: detail.prompts,
+          userInstructions: updated,
+        );
+        _instructionsDirty = false;
+        _savingInstructions = false;
+      });
+      _showMessage('已保存领域指令');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingInstructions = false);
+      _showMessage(subagentErrorMessage(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_detail?.summary.name ?? widget.summary.name),
+        actions: [
+          IconButton(
+            onPressed: _loading
+                ? null
+                : () => _reload(preserveDraft: _instructionsDirty),
+            tooltip: '刷新详情',
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _buildBody(theme, colors),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(ThemeData theme, ColorScheme colors) {
+    if (_loading && _detail == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _detail == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 40, color: colors.error),
+              const SizedBox(height: 12),
+              Text(
+                subagentErrorMessage(_error!),
+                style: theme.textTheme.bodyLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: () => _reload(), child: const Text('重试')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final detail = _detail!;
+    final summary = detail.summary;
+    final selection = _mcpSelection!;
+    final instructions = detail.userInstructions;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        SubagentCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('概览与运行策略', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(summary.description, style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('启用'),
+                subtitle: Text(
+                  !summary.enabledEditable
+                      ? '当前未配置底层能力，暂不可开启'
+                      : summary.enabled
+                      ? '已开启，可正常响应对话路由与后台任务'
+                      : '已关闭，暂不参与对话路由或后台任务',
+                ),
+                value: summary.enabled,
+                onChanged: (!summary.enabledEditable || _savingEnabled)
+                    ? null
+                    : _toggleEnabled,
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (summary.supportsChat)
+                    SubagentPill(
+                      label: '支持聊天路由',
+                      background: colors.secondaryContainer,
+                      foreground: colors.onSecondaryContainer,
+                    ),
+                  if (summary.supportsBackground)
+                    SubagentPill(
+                      label: '支持后台任务',
+                      background: colors.surfaceContainerHighest,
+                      foreground: colors.onSurfaceVariant,
+                    ),
+                  SubagentPill(
+                    label: '无跨次上下文',
+                    background: colors.surfaceContainerHighest,
+                    foreground: colors.onSurfaceVariant,
+                  ),
+                  SubagentPill(
+                    label: summary.parallelAllowed ? '允许并发' : '独占串行',
+                    background: colors.surfaceContainerHighest,
+                    foreground: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              if (summary.routingHint != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '路由说明',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  summary.routingHint!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SubagentCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'MCP 服务权限',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                        if (_savingMcp)
+                          const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      selection.editable
+                          ? '读取全局 MCP 列表，默认全部关闭。开启后，该 Subagent 在处理对话任务时即可调用对应服务。'
+                          : '该 Subagent 仅在后台执行固定结构化任务，不支持绑定外部 MCP 服务。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selection.editable && selection.servers.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text(
+                    '暂无 MCP 服务，请先在「设置 → MCP 服务」中添加。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else if (selection.editable)
+                for (final server in selection.servers) ...[
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: Text(server.name),
+                    subtitle: Text(
+                      [
+                        '${server.transport.label} · ${server.status.label} · ${server.toolCount} 个工具',
+                        if (!server.globalEnabled) '服务端配置中已停用',
+                        if (server.description.isNotEmpty) server.description,
+                      ].join('\n'),
+                    ),
+                    isThreeLine:
+                        !server.globalEnabled && server.description.isNotEmpty,
+                    value: server.enabled,
+                    onChanged: _savingMcp
+                        ? null
+                        : (val) => _toggleMcpServer(server.name, val),
+                  ),
+                ],
+            ],
+          ),
+        ),
+        if (summary.hasUserInstructions && instructions != null) ...[
+          const SizedBox(height: 12),
+          SubagentCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('领域用户指令', style: theme.textTheme.titleMedium),
+                    ),
+                    SubagentPill(
+                      label: instructions.path,
+                      background: colors.surfaceContainerHighest,
+                      foreground: colors.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _instructionsController,
+                  enabled:
+                      summary.userInstructionsEditable && !_savingInstructions,
+                  minLines: 4,
+                  maxLines: 10,
+                  maxLength: 20000,
+                  onChanged: (_) {
+                    final dirty =
+                        _instructionsController.text !=
+                        instructions.instructions;
+                    if (dirty != _instructionsDirty) {
+                      setState(() => _instructionsDirty = dirty);
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    hintText: '输入仅作用于该助手领域的显式偏好与规则…',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed:
+                        (_instructionsDirty &&
+                            !_savingInstructions &&
+                            summary.userInstructionsEditable)
+                        ? _saveInstructions
+                        : null,
+                    icon: const Icon(Icons.save_outlined, size: 18),
+                    label: Text(_savingInstructions ? '保存中…' : '保存指令'),
+                  ),
+                ),
+                if (instructions.habits.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: Text(
+                      '已归纳行为习惯（${instructions.habits.length}）',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    children: [
+                      for (final habit in instructions.habits)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.auto_awesome_outlined,
+                            size: 16,
+                            color: colors.primary,
+                          ),
+                          title: Text(habit.text),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        SubagentCard(
+          padding: EdgeInsets.zero,
+          child: ExpansionTile(
+            title: Text(
+              '内置工具（${summary.tools.length}）',
+              style: theme.textTheme.titleMedium,
+            ),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            children: [
+              for (final tool in summary.tools)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            tool.name,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          for (final trigger in tool.triggers)
+                            SubagentPill(
+                              label: trigger == 'chat' ? '聊天' : '后台',
+                              background: colors.surfaceContainerHighest,
+                              foreground: colors.onSurfaceVariant,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        tool.description,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SubagentCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                child: Text('系统提示词（只读）', style: theme.textTheme.titleMedium),
+              ),
+              for (final section in detail.prompts) ...[
+                const Divider(height: 1),
+                ExpansionTile(
+                  title: Text(section.label),
+                  subtitle: Text(
+                    '${section.trigger == 'chat' ? '聊天路由' : '后台任务'} · ${section.sourcePath}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SelectableText(
+                        section.content,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
