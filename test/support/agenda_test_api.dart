@@ -110,7 +110,17 @@ class AgendaTestApi extends MuseApi {
     if (agendaWriteFailure != null) throw agendaWriteFailure!;
     final id = path.substring('/api/agenda/items/'.length);
     final item = _require(id.split('/').first);
-    return {...item, ...body};
+    final next = {...item, ...body};
+    // 服务端用完成与置顶时间表示状态，替身保持一致。
+    if (body['completed'] is bool) {
+      next['completedAt'] = body['completed'] == true
+          ? '2026-03-01T00:00:00Z'
+          : null;
+    }
+    if (body['pinned'] is bool) {
+      next['pinnedAt'] = body['pinned'] == true ? '2026-03-01T00:00:00Z' : null;
+    }
+    return next;
   }
 
   @override

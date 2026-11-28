@@ -28,6 +28,12 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   final _notes = TextEditingController();
   final _timeSection = GlobalKey();
 
+  /// 宽横屏分栏的最小可用宽度。
+  static const _wideMinWidth = 640.0;
+
+  /// 宽横屏分栏的最小窗口高度。用窗口高度判断，避免软键盘弹起时布局来回切换。
+  static const _wideMinHeight = 400.0;
+
   AgendaItem? _item;
   bool _loading = true;
   bool _saving = false;
@@ -359,8 +365,6 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final item = _item;
     return Scaffold(
       appBar: AppBar(
@@ -380,97 +384,252 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
         top: false,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                children: [
-                  TextField(
-                    controller: _title,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '标题',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _notes,
-                    minLines: 2,
-                    maxLines: 6,
-                    decoration: const InputDecoration(
-                      labelText: '备注',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _MomentSection(
-                    key: _timeSection,
-                    title: '安排时间',
-                    icon: Icons.event,
-                    day: _scheduleDay,
-                    time: _scheduleTime,
-                    onPickDay: _pickScheduleDay,
-                    onPickTime: _pickScheduleTime,
-                    onClear: () => setState(() {
-                      _scheduleChanged = true;
-                      _scheduleDay = null;
-                      _scheduleTime = null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-                  _MomentSection(
-                    title: '截止时间',
-                    icon: Icons.flag_outlined,
-                    day: _dueDay,
-                    time: _dueTime,
-                    onPickDay: _pickDueDay,
-                    onPickTime: _pickDueTime,
-                    onClear: () => setState(() {
-                      _dueChanged = true;
-                      _dueDay = null;
-                      _dueTime = null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-                  _ReminderSection(
-                    item: item,
-                    onAdd: _addReminder,
-                    onEdit: _editReminder,
-                    onCancel: _cancelReminder,
-                  ),
-                  if (widget.agenda.instanceZone case final zone?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        '服务端时区：$zone',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  if (_error case final error?) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      error,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.error,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: Text(_saving ? '正在保存…' : '保存'),
-                  ),
-                  if (item != null) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: _toggleCompleted,
-                      child: Text(item.completed ? '重新打开' : '标记完成'),
-                    ),
-                  ],
-                ],
+            : LayoutBuilder(
+                builder: (context, constraints) => _isWide(constraints)
+                    ? _buildWideLayout(context)
+                    : _buildNarrowLayout(context),
               ),
       ),
+    );
+  }
+
+  /// 宽横屏才左右分栏：宽度按实际可用空间判断，方向与高度按窗口判断，
+  /// 避免竖屏宽窗口和软键盘弹起时把分栏布局改回单列。
+  bool _isWide(BoxConstraints constraints) {
+    final size = MediaQuery.sizeOf(context);
+    return size.width > size.height &&
+        size.height >= _wideMinHeight &&
+        constraints.maxWidth >= _wideMinWidth;
+  }
+
+  /// 窄屏与竖屏布局：单列表单，保存与完成按钮跟在内容后面。
+  Widget _buildNarrowLayout(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final item = _item;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        TextField(
+          controller: _title,
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            labelText: '标题',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _notes,
+          minLines: 2,
+          maxLines: 6,
+          decoration: const InputDecoration(
+            labelText: '备注',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _scheduleSection(),
+        const SizedBox(height: 12),
+        _dueSection(),
+        const SizedBox(height: 12),
+        _reminderSection(),
+        if (widget.agenda.instanceZone case final zone?)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              '服务端时区：$zone',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (_error case final error?) ...[
+          const SizedBox(height: 12),
+          Text(
+            error,
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
+          ),
+        ],
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? '正在保存…' : '保存'),
+        ),
+        if (item != null) ...[
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: _toggleCompleted,
+            child: Text(item.completed ? '重新打开' : '标记完成'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 宽横屏布局：左侧标题与备注，右侧安排、截止与提醒，
+  /// 保存与完成按钮固定在底部，随时可点。
+  Widget _buildWideLayout(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _title,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: '标题',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _notes,
+                        minLines: 4,
+                        maxLines: 12,
+                        decoration: const InputDecoration(
+                          labelText: '备注',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              VerticalDivider(
+                key: const Key('agenda-item-pane-divider'),
+                width: 1,
+                thickness: 1,
+                color: colors.outlineVariant,
+              ),
+              Expanded(
+                flex: 6,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _scheduleSection(),
+                      const SizedBox(height: 12),
+                      _dueSection(),
+                      const SizedBox(height: 12),
+                      _reminderSection(),
+                      if (widget.agenda.instanceZone case final zone?)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            '服务端时区：$zone',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildActionBar(context),
+      ],
+    );
+  }
+
+  /// 宽横屏底部的操作栏，保存与完成不需要滚动就能点到。
+  Widget _buildActionBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final item = _item;
+    return Material(
+      color: colors.surface,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.outlineVariant)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Row(
+          children: [
+            if (_error case final error?) ...[
+              Expanded(
+                child: Text(
+                  error,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ] else
+              const Spacer(),
+            if (item != null) ...[
+              OutlinedButton(
+                onPressed: _toggleCompleted,
+                child: Text(item.completed ? '重新打开' : '标记完成'),
+              ),
+              const SizedBox(width: 12),
+            ],
+            FilledButton(
+              onPressed: _saving ? null : _save,
+              child: Text(_saving ? '正在保存…' : '保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scheduleSection() {
+    return _MomentSection(
+      key: _timeSection,
+      title: '安排时间',
+      icon: Icons.event,
+      day: _scheduleDay,
+      time: _scheduleTime,
+      onPickDay: _pickScheduleDay,
+      onPickTime: _pickScheduleTime,
+      onClear: () => setState(() {
+        _scheduleChanged = true;
+        _scheduleDay = null;
+        _scheduleTime = null;
+      }),
+    );
+  }
+
+  Widget _dueSection() {
+    return _MomentSection(
+      title: '截止时间',
+      icon: Icons.flag_outlined,
+      day: _dueDay,
+      time: _dueTime,
+      onPickDay: _pickDueDay,
+      onPickTime: _pickDueTime,
+      onClear: () => setState(() {
+        _dueChanged = true;
+        _dueDay = null;
+        _dueTime = null;
+      }),
+    );
+  }
+
+  Widget _reminderSection() {
+    return _ReminderSection(
+      item: _item,
+      onAdd: _addReminder,
+      onEdit: _editReminder,
+      onCancel: _cancelReminder,
     );
   }
 }

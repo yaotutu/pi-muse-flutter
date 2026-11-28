@@ -21,6 +21,15 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _searching = false;
   String? _opening;
 
+  /// 宽横屏分栏的最小可用宽度。
+  static const _wideMinWidth = 660.0;
+
+  /// 宽横屏分栏的最小窗口高度。用窗口高度判断，避免软键盘弹起时布局来回切换。
+  static const _wideMinHeight = 400.0;
+
+  /// 宽横屏下左侧月历栏的宽度。
+  static const _calendarPaneWidth = 320.0;
+
   AgendaController get _agenda => widget.agenda;
 
   @override
@@ -93,8 +102,7 @@ class _AgendaPageState extends State<AgendaPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('日程'),
@@ -127,68 +135,136 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
       body: SafeArea(
         top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_searching)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: TextField(
-                  controller: _search,
-                  autofocus: true,
-                  textInputAction: TextInputAction.search,
-                  decoration: const InputDecoration(
-                    hintText: '搜索事项标题或备注',
-                    prefixIcon: Icon(Icons.search),
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: _searchItems,
-                ),
-              ),
-            if (MediaQuery.viewInsetsOf(context).bottom == 0)
-              Flexible(
-                flex: 2,
-                child: SingleChildScrollView(
-                  child: _AgendaCalendarCard(
-                    month: _agenda.month,
-                    selectedDay: _agenda.selectedDay,
-                    items: _agenda.monthItems,
-                    instanceZone: _agenda.instanceZone,
-                    onMonthChanged: _agenda.setMonth,
-                    onSelectDay: _agenda.selectDay,
-                  ),
-                ),
-              ),
-            _AgendaFilterBar(
-              scope: _agenda.scope,
-              selectedDay: _agenda.selectedDay,
-              onScopeChanged: _agenda.setScope,
-              onClearDay: () => _agenda.selectDay(null),
-            ),
-            if (_agenda.notice case final notice?)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Text(
-                  notice,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.error,
-                  ),
-                ),
-              )
-            else if (_agenda.items.isNotEmpty && _agenda.error != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Text(
-                  _agenda.error!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.error,
-                  ),
-                ),
-              ),
-            Expanded(child: _buildList(context)),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) => _isWide(constraints)
+              ? _buildWideLayout(context)
+              : _buildNarrowLayout(context),
         ),
+      ),
+    );
+  }
+
+  /// 宽横屏才左右分栏：宽度按实际可用空间判断，方向与高度按窗口判断，
+  /// 避免竖屏宽窗口和软键盘弹起时把分栏布局改回单列。
+  bool _isWide(BoxConstraints constraints) {
+    final size = MediaQuery.sizeOf(context);
+    return size.width > size.height &&
+        size.height >= _wideMinHeight &&
+        constraints.maxWidth >= _wideMinWidth;
+  }
+
+  /// 窄屏与竖屏布局：上方月历，下方筛选与列表。
+  Widget _buildNarrowLayout(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_searching) _buildSearchField(),
+        if (MediaQuery.viewInsetsOf(context).bottom == 0)
+          Flexible(
+            flex: 2,
+            child: SingleChildScrollView(
+              child: _AgendaCalendarCard(
+                month: _agenda.month,
+                selectedDay: _agenda.selectedDay,
+                items: _agenda.monthItems,
+                instanceZone: _agenda.instanceZone,
+                onMonthChanged: _agenda.setMonth,
+                onSelectDay: _agenda.selectDay,
+              ),
+            ),
+          ),
+        _buildFilterBar(),
+        _buildNotice(),
+        Expanded(child: _buildList(context)),
+      ],
+    );
+  }
+
+  /// 宽横屏布局：左侧紧凑月历，右侧筛选、搜索与列表，两侧各自滚动。
+  Widget _buildWideLayout(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: _calendarPaneWidth,
+          child: SingleChildScrollView(
+            child: _AgendaCalendarCard(
+              month: _agenda.month,
+              selectedDay: _agenda.selectedDay,
+              items: _agenda.monthItems,
+              instanceZone: _agenda.instanceZone,
+              compact: true,
+              onMonthChanged: _agenda.setMonth,
+              onSelectDay: _agenda.selectDay,
+            ),
+          ),
+        ),
+        VerticalDivider(
+          key: const Key('agenda-pane-divider'),
+          width: 1,
+          thickness: 1,
+          color: colors.outlineVariant,
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_searching) _buildSearchField(),
+              _buildFilterBar(),
+              _buildNotice(),
+              Expanded(child: _buildList(context)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: TextField(
+        controller: _search,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        decoration: const InputDecoration(
+          hintText: '搜索事项标题或备注',
+          prefixIcon: Icon(Icons.search),
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: _searchItems,
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return _AgendaFilterBar(
+      scope: _agenda.scope,
+      selectedDay: _agenda.selectedDay,
+      onScopeChanged: _agenda.setScope,
+      onClearDay: () => _agenda.selectDay(null),
+    );
+  }
+
+  /// 错误与提示。读失败且列表为空时由列表自己展示重试入口。
+  Widget _buildNotice() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final String text;
+    if (_agenda.notice case final notice?) {
+      text = notice;
+    } else if (_agenda.items.isNotEmpty && _agenda.error != null) {
+      text = _agenda.error!;
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Text(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
       ),
     );
   }
@@ -260,6 +336,7 @@ class _AgendaCalendarCard extends StatelessWidget {
     required this.instanceZone,
     required this.onMonthChanged,
     required this.onSelectDay,
+    this.compact = false,
   });
 
   final DateTime month;
@@ -270,6 +347,9 @@ class _AgendaCalendarCard extends StatelessWidget {
   final String? instanceZone;
   final ValueChanged<DateTime> onMonthChanged;
   final ValueChanged<DateTime?> onSelectDay;
+
+  /// 宽横屏左栏使用紧凑格子，整月日期尽量一屏可见。
+  final bool compact;
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -330,9 +410,9 @@ class _AgendaCalendarCard extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: EdgeInsets.zero,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 44,
+              mainAxisExtent: compact ? 36 : 44,
             ),
             itemCount: cells,
             itemBuilder: (context, index) {

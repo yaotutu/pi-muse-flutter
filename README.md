@@ -21,7 +21,7 @@ Pi Muse 的 Flutter Android 客户端，通过 HTTP/SSE 连接自部署的 [Pi M
 
 ### 日程
 
-底栏「日程」把月历和事项列表放在一页，事项保存在服务端：
+打开「日程」可以在一页查看月历和事项列表。手机竖屏上下排列，宽屏横向并排。事项保存在服务端：
 
 - 月历标出当天的安排、截止和待触发提醒，点选某一天把列表筛选到这一天，再点一次取消筛选。
 - 列表可切换「未完成」和「全部」，并按标题或备注搜索；右上角「新建事项」新建一条事项。
@@ -67,7 +67,7 @@ The [Pi Muse user manual](https://github.com/yaotutu/pi-muse/blob/main/docs/manu
 
 ### Agenda
 
-The 日程 (Agenda) bottom-bar entry puts a month calendar and the item list on one page; items live on the server:
+Open 日程 (Agenda) to see the month calendar and item list on one page. They stack in phone portrait and sit side by side in tablet landscape. Items live on the server:
 
 - The calendar marks each day's schedule, deadline, and pending reminders. Tapping a day filters the list to that day; tapping it again clears the filter.
 - The list switches between 未完成 (Unfinished) and 全部 (All) and searches titles and notes; the 「新建事项」 (New item) button in the top right creates an item.

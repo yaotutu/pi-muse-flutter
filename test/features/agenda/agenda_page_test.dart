@@ -9,6 +9,27 @@ import 'package:pi_muse_flutter/src/shared/agenda_receipt.dart';
 
 import '../../support/agenda_test_api.dart';
 
+/// 生成一条测试事项。
+Map<String, dynamic> agendaItem(
+  String id,
+  String title, {
+  String? notes,
+  String? schedule,
+}) => {
+  'id': id,
+  'title': title,
+  'notes': notes,
+  'schedule': schedule == null
+      ? null
+      : {'type': 'date', 'start': schedule, 'timeZone': 'Asia/Shanghai'},
+  'due': null,
+  'pinnedAt': null,
+  'completedAt': null,
+  'createdAt': '2026-03-01T00:00:00Z',
+  'updatedAt': '2026-03-01T00:00:00Z',
+  'reminders': <Json>[],
+};
+
 void main() {
   testWidgets('the agenda destination lists items and keeps the chat draft', (
     tester,
@@ -220,6 +241,149 @@ void main() {
 
       expect(api.agendaWrites, isEmpty);
       await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'wide landscape splits the agenda into a calendar pane and an independent list pane',
+    (tester) async {
+      // TB300FU 横屏：1280x800 物理像素，密度 213，约 962x601 dp。
+      tester.view.physicalSize = const Size(962, 601);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = AgendaTestApi()
+        ..items = [
+          agendaItem('item', '取快递', schedule: '2026-03-08'),
+          for (var index = 0; index < 12; index++)
+            agendaItem('item-$index', '待办 $index'),
+        ];
+      final chat = ChatController(api, () => api)..synchronized = true;
+      chat.active.revision = 'revision';
+      chat.active.dirty = false;
+      final appearance = AppearanceSettings(
+        readPalette: () async => null,
+        writePalette: (_) async {},
+      );
+      addTearDown(chat.dispose);
+      addTearDown(appearance.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WorkspacePage(
+            chat: chat,
+            appearance: appearance,
+            connectionBuilder: (_) => const SizedBox(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('日程'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      final monthTitle = find.text('${now.year}年${now.month}月');
+      final firstItem = find.text('取快递');
+      expect(monthTitle, findsOneWidget);
+      expect(firstItem, findsOneWidget);
+
+      // 月历在左栏，事项列表在右栏。
+      expect(
+        tester.getTopLeft(monthTitle).dx,
+        lessThan(tester.getTopLeft(firstItem).dx),
+      );
+      // 事项行和当月日期都在可视范围内。
+      expect(firstItem.hitTestable(), findsOneWidget);
+      expect(find.text('15').hitTestable(), findsOneWidget);
+
+      // 列表独立滚动，左侧月历不动。
+      await tester.drag(firstItem, const Offset(0, -400));
+      await tester.pumpAndSettle();
+      expect(firstItem.hitTestable(), findsNothing);
+      expect(monthTitle.hitTestable(), findsOneWidget);
+      expect(find.text('15').hitTestable(), findsOneWidget);
+
+      // 搜索框与列表同栏。
+      await tester.tap(find.byTooltip('搜索事项'));
+      await tester.pumpAndSettle();
+      final search = find.byType(TextField);
+      expect(search, findsOneWidget);
+      expect(
+        tester.getTopLeft(search).dx,
+        greaterThan(tester.getTopLeft(monthTitle).dx),
+      );
+
+      // 竖屏宽窗口不分栏，保持单列。
+      tester.view.physicalSize = const Size(800, 1200);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('agenda-pane-divider')), findsNothing);
+      expect(
+        tester.getTopLeft(monthTitle).dy,
+        lessThan(tester.getTopLeft(find.text('未完成')).dy),
+      );
+    },
+  );
+
+  testWidgets(
+    'wide landscape keeps the item detail actions reachable and the phone layout intact',
+    (tester) async {
+      tester.view.physicalSize = const Size(962, 601);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = AgendaTestApi()
+        ..items = [
+          agendaItem('item', '交报告', notes: '写完再发', schedule: '2026-12-01'),
+        ];
+      final agenda = AgendaController(
+        client: AgendaClient(api),
+        events: const Stream.empty(),
+      );
+      addTearDown(agenda.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AgendaItemPage(agenda: agenda, itemId: 'item'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final title = find.widgetWithText(TextField, '标题');
+      final schedule = find.text('安排时间');
+      expect(title, findsOneWidget);
+      expect(schedule, findsOneWidget);
+      expect(find.byKey(const Key('agenda-item-pane-divider')), findsOneWidget);
+      // 宽横屏下标题在左，时间设置在右。
+      expect(
+        tester.getTopLeft(title).dx,
+        lessThan(tester.getTopLeft(schedule).dx),
+      );
+      // 保存与标记完成固定在底部，不用滚动就能点到。
+      expect(find.text('保存').hitTestable(), findsOneWidget);
+      expect(find.text('标记完成').hitTestable(), findsOneWidget);
+
+      // 完成动作照旧写回服务端。
+      await tester.tap(find.text('标记完成'));
+      await tester.pumpAndSettle();
+      expect(api.agendaWrites, hasLength(1));
+      expect(api.agendaWrites.first.$1, '/api/agenda/items/item');
+      expect(api.agendaWrites.first.$2?['completed'], isTrue);
+      expect(find.text('重新打开'), findsOneWidget);
+
+      // 回到竖屏恢复单列表单，保存按钮仍跟在内容后面。
+      tester.view.physicalSize = const Size(390, 780);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('agenda-item-pane-divider')), findsNothing);
+      expect(
+        tester.getTopLeft(title).dy,
+        lessThan(tester.getTopLeft(schedule).dy),
+      );
+      expect(find.text('保存'), findsOneWidget);
+      expect(find.text('重新打开'), findsOneWidget);
     },
   );
 }
