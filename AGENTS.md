@@ -14,8 +14,8 @@
 | `lib/src/shared/` | 跨功能复用的基础工具。 |
 | `android/app/src/main/`、`android/app/src/test/` | Kotlin 桥接按 `sms`、`attachments`、`appupdate` 分包。`MainActivity` 与 Manifest、WorkManager 引用的组件保留原类身份。 |
 | `test/{app,network,features,support}/` | 应用导航、协议和功能回归测试与共享测试夹具。 |
-| `.github/`、`tools/` | CI、Android 发布和版本脚本。细节见[README 的自动打包与发布](README.md#自动打包与发布)。 |
-| `README.md` | 中英文使用、本地运行和发布入口。 |
+| `.github/`、`tools/` | CI、Android 发布和版本脚本。细节见[Android 发布指南](docs/android-release.md)。 |
+| `README.md`、`docs/` | 中英文安装与本地运行入口、专项工程文档。 |
 
 `app/` 组装功能页面，不把设置路由、分栏状态等应用级职责放进聊天页。功能页面、接口适配和数据类型按功能就近维护，不反向依赖 `app/`；`network/` 与 `shared/` 不依赖功能页面。MCP 协议、连接与执行由服务端实现。
 
@@ -42,4 +42,4 @@ Dart 文件采用 `snake_case.dart`，普通目录与 Markdown 文件用 ASCII �
 
 功能变化同步更新受影响的 README 和对应工程文档。公共手册中受影响的中英文页面按工作区文档规范同步。工程文档整理检查差异、引用、命名和规则一致性。版本由 CI 管理，手动改应用 ID、版本、签名、CI 或正式发布配置需明确授权。
 
-已验收的功能或修复仅暂存本任务文件，清理临时测试数据后提交并推送到 `origin/main`，推送前先获取并 rebase `origin/main`。普通主线推送触发现有发布流程。若非交互 HTTPS 推送需要现有 GitHub CLI 凭据，可用 `GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:main`，不修改全局配置或远端。
+已验收的功能或修复仅暂存本任务文件，清理临时测试数据后按[Android 发布指南](docs/android-release.md)提交和推送。

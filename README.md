@@ -1,91 +1,26 @@
 # Pi Muse Flutter
 
+[简体中文](#简体中文) · [English](#english)
+
 ## 简体中文
 
-这是独立的 Flutter Android 客户端预览，不需要检出或运行 React Native 工程。应用使用独立包名 `com.pimuse.pi_muse_flutter`，通过 HTTP/SSE 连接 Pi Muse 服务端。打开后填写服务端根地址及访问密钥，点击「连接」。访问密钥用于换取 Session Token。连接成功后，可从主聊天进入会话列表、创建或切换会话。
+Pi Muse 的 Flutter Android 客户端，通过 HTTP/SSE 连接自部署的 [Pi Muse 服务端](https://github.com/yaotutu/pi-muse)。应用 ID 为 `com.pimuse.pi_muse_flutter`。
 
-点左上角打开侧边栏，选择会话或点「新建会话」。顶部居中显示当前会话名称。底栏显示「聊天」「待办」「新闻」「设置」；待办和新闻暂未启用，服务器连接从「设置」进入。用户消息显示在右侧气泡，助手回复是宽幅卡片，保留 Markdown 层级与原文换行。回复实时显示，发出消息后即使切到后台或退出应用，服务端也会继续执行；回到前台或重新打开后客户端会自动恢复进度或显示结果（仅持续离线未能同步时提供「立即同步」）。需要人工确认或文件修改审批时，对话底部会直接弹出可操作的审批卡片（支持文件对比及通用建议/操作确认），可直接展开对比并批准或拒绝，也可以点「查看全文」全屏核对。
+### 安装与连接
 
-### 查看会话详情
+1. 从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载 `app-release.apk` 并在 Android 上安装。覆盖安装要求包名与签名一致；若需要先卸载旧安装，卸载会清除本机应用数据。
+2. 首次打开时输入手机能访问的服务端根地址与服务端访问密钥，点击「连接」。不要填写模型 API key。HTTP 不加密；优先使用可信网络或 HTTPS。
+3. 在「聊天」发送一条消息。修改连接从「设置 → 服务器连接」进入。
 
-当助手正在处理请求时，聊天输入框上方会紧凑展示最新一条正在进行的动作；正常完成后自动收起，保持聊天区域简洁（纯文本问答或失败/中断提示除外）。点该提示或聊天右上角的「会话详情」（`...`），可切换到三个独立标签页：**执行记录**以连续时间轴直接呈现当前会话的全部操作动作与脱敏摘要（不再套外层总任务卡片或重复显示会话标题），并在任务切换处标出轻量来源标记，关联待审批的节点可直接跳到审批页；**审批**作为独立板块集中展示待处理的修改确认（默认 24 小时审批窗口，批准后原任务原地继续）和历史审批记录，历史预览会同时显示审批结果与实际执行回执；**定时任务**集中列出归属当前会话的定时任务与网页监控。返回键回到聊天，草稿和正在生成的回复会保留。
+操作说明统一在 [Pi Muse 用户手册](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/index.md) 维护：
 
-### 操作消息
+- [对话、会话与短信同步](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/conversations-and-agents.md)
+- [附件、工作区文件与审批](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/files-and-approvals.md)
+- [外观、连接、MCP 与应用更新](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/profile-and-settings.md)
 
-聊天超出屏幕时，从消息内或消息之间上下滑动都能滚动整段聊天。滑到最早或最新一条时，列表停在边界，不会拉伸。过宽的代码块可以左右滑动。
+### 本地开发
 
-自己发出的消息不显示操作栏。点已保存的助手回复下方的「复制」可以复制整条回复；点「选择文字」可在单独页面长按选择原文（含 Markdown 标记）。可反馈的回复还会显示点赞、不喜欢和书签按钮。点书签收藏，再点一次取消收藏。收藏由服务器保存，可以与点赞或不喜欢同时使用。点亮的图标表示当前状态。结果不明时，先点回复下方的「核对反馈状态」。点「引用回复」后，引用会显示在输入框上方，可移除，也可随下一条消息发送。
-
-本机正在生成回复时，输入框右侧显示「停止回复」。输入下一条或添加附件后，按钮变为「停止并发送」。客户端在确认上一轮停止并同步历史后发送下一条。如果无法确认，下一条保留在输入框。若上一条也未保存，可通过「切换未发送草稿」找回两条内容。
-
-### 管理会话
-
-打开左侧边栏，在专题会话的「更多操作」中可重命名或删除。重命名保留历史和草稿。删除会永久移除该会话的聊天历史和反馈，确认前会显示关联的定时任务和网页监控。有任务或监控时，可选择一并删除，或保留并转到默认会话。删除当前会话后会回到默认会话。
-
-### 设置
-
-底栏的「设置」和聊天侧栏的「设置」都进入同一个设置首页。在竖屏或窄窗口时，底栏保留并可直接切回「聊天」，点「外观」「服务器连接」「MCP 服务」「Subagent」「短信同步」或「应用更新」进入对应页面，返回时回到设置首页；在横屏大屏（例如平板横屏）下，导航自动切换到屏幕右侧竖排，释放纵向空间，左侧会话列表支持一键常驻或收起，「设置」全部子项也会统一以左目录、右详情的双栏视图展示。
-
-### 外观与主题
-
-打开「设置 → 外观」，可以在「主题模式」中开关「跟随系统自动切换」。默认跟随系统自动切换浅色和深色；关闭后可手动固定为「浅色」或「深色」。下方可在「配色」中选择靛蓝（默认）、森林绿、暖棕或紫色。点选后立即生效，下次打开应用时恢复上次保存的外观设置。设置仅保存在本机。
-
-### 服务器连接
-
-首次尚未连接服务端时，应用显示居中的欢迎登录页。连接成功后，可随时在「设置 → 服务器连接」中以统一卡片样式查看或修改服务器地址与访问密钥；仅在真正点击「保存并连接」且本机存在进行中回复或未发送草稿时，才会弹窗提示确认。
-
-### MCP 服务
-
-打开「设置 → MCP 服务」，可以集中管理外部 MCP 服务器（新增、编辑、重连、删除）并控制主聊天的「聊天可用」开关。各 Subagent 对 MCP 服务的按需选用在「设置 → Subagent」中单独勾选。
-
-### Subagent
-
-打开「设置 → Subagent」，可以统一查看服务端全部专职 Subagent，在列表或详情页直接切换启用开关，并检视内置系统提示词、工具清单、编辑专属规则（`AGENTS.md`）以及按需勾选该 Subagent 可用的 MCP 服务。短信助手默认关闭，开启「同步新短信」或向服务端上传短信时会自动开启。
-
-### 同步新短信
-
-打开「设置 → 短信同步」，开启「同步新短信」并授予 Android 接收短信权限。应用只捕获开启后新收到的短信，并将原文和发件人发到当前连接的 Pi Muse 服务端。HTTP 连接传输时未加密。后台可继续同步，断网时短信加密保存在本机，恢复网络后继续上传。关闭同步或撤回权限会暂停接收和上传，已排队的短信会保留。
-
-如果 Android 拒绝授权，点「打开应用设置」，在「权限 → 短信」中授权。如果系统提示权限受限，先在应用信息右上角菜单点「允许受限设置」，再授权或返回应用重试。首次授权后在应用内确认「同步新短信」已经开启，再发一条新短信测试。
-
-「待同步」是尚未上传的新短信数量。新短信可能很快自动上传，队列保持为零时，可看「上次确认成功」是否更新。开启「同步新短信」或收到短信上传后，服务端会自动开启短信助手；如果服务端暂停接收，短信会保存在本机，恢复后点「立即同步」。如果连接失效，先到「服务器连接」重新连接。重新登录或更新服务器地址会保留待传短信。发送结果不明时，应用先向服务端核对，确认未找到后，可点「立即同步」重试。
-
-### 导入历史短信
-
-在「设置 → 短信同步 → 历史短信导入」点「导入历史短信」。第一次先授予 Android 读取短信权限，授权后返回，再确认「开始上传」。无需打开「同步新短信」。导入覆盖 Android 当前可读的所有已收和已发 SMS，不限日期；不含草稿、待发送、MMS、RCS 和已删除的短信。短信原文、收发对象和时间会发往已连接的 Pi Muse 服务端，可能包含敏感信息；HTTP 连接不加密。
-
-请在导入时留在页面。退到后台、离开页面或点「暂停导入」会暂停，返回后点「继续导入」。应用显示已导入、已跳过和未能导入的数量；不符合接口要求的记录不会被截断上传。同一安装重复扫描时会跳过已确认的历史记录，无法保证与以前通过实时同步或其他客户端上传的记录去重。
-
-导入只把短信写入服务端归档队列，不启动模型处理。之后如果在服务端执行归档处理，服务端默认只保留最新 2,000 条已处理的归档原文；全量上传不等于永久备份。
-
-### 应用更新
-
-正式版启动时和前后台停留每小时会自动检查更新；也可从「设置 → 应用更新」手动检查。已连接 Pi Muse 服务端时优先通过你自己的服务端镜像（`/updates/android/latest` 与 `/updates/android/apk/...`）检查并下载安装包，无需手机端直连 GitHub；未连接服务端时回退官方 GitHub Releases。发现新版本后，应用优先下载与当前 Android 进程架构匹配的较小安装包，缺少匹配包时自动下载通用包 `app-release.apk`。下载中可取消，同一次运行中可手动重试。下载通过大小、SHA-256、包名、版本与签名校验后，应用在前台打开 Android 安装器，由你确认安装。首次更新如果需要授权，点「打开授权设置」，允许 Pi Muse 安装未知应用，返回后点「继续安装」。
-
-首次安装或不确定设备架构时，请从 [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) 下载 `app-release.apk`。发布页提供拆分包时，也可按设备架构选择 `arm64-v8a`、`armeabi-v7a` 或 `x86_64`。后续覆盖安装需要相同的包名和签名。若设备上装的是开发调试包，请先卸载调试版。卸载会清除该客户端的本机数据。
-
-### 自动打包与发布
-
-- 推送到 `main` 后，[发布流程](.github/workflows/release.yml) 递增 `pubspec.yaml` 的补丁版本和 Android 构建号，例如 `0.1.0+1` 变为 `0.1.1+2`。流程构建一个通用 APK 和三个拆分 APK，使用同一签名和构建号。分析、测试和 APK 校验通过后，流程推送版本提交及标签，将四个包上传到草稿，核对每个包的大小和 SHA-256 后再公开 GitHub Release。`pubspec.yaml` 的版本字段由发布流程维护。
-- 手动运行 `release` 使用所选提交的现有版本，构建四个 APK 并保存在 Actions 产物中。版本提交、标签和正式发布由 `main` 的推送触发。
-- GitHub 仓库需为 `yaotutu/pi-muse-flutter`，并让手机可匿名访问其 Releases 与 APK。仓库需允许发布流程的 `GITHUB_TOKEN` 写入 `main`、标签和 Releases。
-- Flutter 的正式 APK 使用独立的发布签名，不复用 RN 客户端的 keystore。将 Base64 编码的 keystore、库密码、别名和密钥密码分别配置为仓库 Actions secrets `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。妥善备份 keystore 和密码；后续版本必须使用同一把密钥，才能覆盖更新已安装的正式版。本地开发使用 Debug APK。
-
-### 发送附件
-
-点输入框左侧的「添加附件」，在 Android 系统选择器中选取图片或文本。附件会先列在输入框上方，可以移除，再与文字一起发送，也可以单独发送。每条消息最多 4 项、合计 8 MiB，其中文本合计最多 100,000 字节。支持 PNG、JPEG、GIF、WebP 和有效的 UTF-8 文本。
-
-发送后，附件随用户消息显示。点图片可打开预览，文本附件显示名称和大小。图片理解取决于当前服务端配置的模型。发送结果不明时，先点「核对发送结果」。确认消息未保存时，原附件和文字会恢复到当前会话的草稿。
-
-### 浏览工作区文件
-
-打开聊天左上角的会话菜单，点「工作区文件」。列表显示连接服务器上的共享工作区，所有会话打开的是同一目录。点文件夹进入下一级，点「刷新目录」更新列表，返回键可逐级返回。
-
-文本以可选择的原文显示，Markdown、HTML 和 SVG 都按文本打开。PNG、JPEG、GIF、WebP 可缩放预览，其他二进制文件显示名称和大小。服务端单文件读取上限为 8 MiB。本入口提供浏览和预览。
-
-### 本地运行和检查
-
-需要 Flutter 3.50.1、JDK 17 或兼容版本、Android SDK 36 和 Android 模拟器。在本目录执行：
+使用 [CI 声明的 Flutter 版本](.github/workflows/ci.yml)、JDK 17 和 Android SDK；运行应用时需要 Android 设备或模拟器。在本目录执行：
 
 ```sh
 flutter pub get
@@ -95,91 +30,30 @@ flutter build apk --debug
 flutter run -d <android-device-id>
 ```
 
-在 Android 模拟器连接宿主机服务时，可用 `http://10.0.2.2:12330`。如果已经用 `adb reverse tcp:12330 tcp:12330` 映射端口，也可使用 `http://127.0.0.1:12330`。如果模拟器默认图形模式卡在启动画面，可用 `flutter run --no-enable-impeller --enable-software-rendering -d <android-device-id>` 复验。验收使用当前源码运行的 Pi Muse 后端、真实模型和浏览器实际渲染的 `/docs`。
+在 Android 模拟器连接宿主机服务时，可填 `http://10.0.2.2:12330`。如果已执行 `adb reverse tcp:12330 tcp:12330`，也可填 `http://127.0.0.1:12330`。模拟器卡在启动画面时，可加 `--no-enable-impeller --enable-software-rendering` 复验。Debug APK 位于 `build/app/outputs/flutter-apk/app-debug.apk`。
+
+模块职责、门禁和真实验收见 [AGENTS.md](AGENTS.md)，签名与发版见 [Android 发布指南](docs/android-release.md)。
 
 ## English
 
-This standalone Flutter Android preview does not require a React Native checkout or runtime. Its application ID is `com.pimuse.pi_muse_flutter`, and it connects to the Pi Muse backend over HTTP/SSE. Enter the server origin and access key, then tap **Connect**. The app exchanges the key for a session token. Once connected, use the main chat to create or switch sessions.
+The Pi Muse Flutter client for Android connects to a self-hosted [Pi Muse server](https://github.com/yaotutu/pi-muse) over HTTP/SSE. Its application ID is `com.pimuse.pi_muse_flutter`.
 
-Open the drawer with the top-left menu button to switch sessions or tap **新建会话** (New session). The centered title displays the current session name. The bottom bar shows **聊天**, **待办**, **新闻**, and **设置**. To-do and News are not enabled yet; open Settings to reach the server connection. Your messages appear in bubbles on the right. Assistant replies appear in wide cards with Markdown formatting and the original line breaks. Replies stream into the conversation, and the server continues running even if you background or close the app; returning automatically reattaches live progress or shows the saved reply (manual **立即同步** appears only if offline reconciliation fails). When an action or file change requires approval, an interactive approval card appears directly inside the chat stream (supporting both file-diff comparisons and general proposal confirmations), letting you inspect full previews and approve or deny in place.
+### Install and connect
 
-### View session details
+1. Download `app-release.apk` from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases) and install it on Android. Updating in place requires the same application ID and signing certificate. If you need to uninstall an existing build first, uninstalling clears the app's local data.
+2. On first launch, enter the server base address reachable from the phone and the server access key, then tap **连接** (Connect). Do not enter the model API key. Plain HTTP is not encrypted; use a trusted network or HTTPS.
+3. Send a message in **聊天** (Chat). To change the connection, open **设置 → 服务器连接** (Settings → Server connection).
 
-While a run is active, a compact single-line live bar above the composer shows only the latest active action and clears automatically when the reply completes normally; tap it or tap **会话详情** (Session details, `...`) in the top right of chat to open the three-tab panel: **执行记录** (Execution records) presents all concrete steps across the current conversation directly on a flat chronological timeline (without outer parent-task cards or repeating the session title below the tabs), marking transitions between parent tasks with a lightweight source label and linking approval steps directly to approval details; **审批** (Approvals) stays dedicated to pending confirmations (default 24-hour approval window; approving resumes execution in place) and past decisions, showing both the decision and execution receipt; **定时任务** (Schedules) lists scheduled jobs and web monitors belonging to the current session. Use Back to return to the conversation with the draft and any in-progress reply intact.
+The [Pi Muse user manual](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/index.md) is the source for usage instructions:
 
-### Message actions
+- [Chat, sessions, and SMS sync](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/conversations-and-agents.md)
+- [Attachments, workspace files, and approvals](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/files-and-approvals.md)
+- [Appearance, connection, MCP, and app updates](https://github.com/yaotutu/pi-muse/blob/main/docs/manual/en/profile-and-settings.md)
 
-When the conversation extends beyond the screen, swipe vertically on a message or between messages to scroll the transcript. The transcript stops without stretching at the oldest and newest edges. Swipe horizontally to read wide code blocks.
+### Local development
 
-Messages you send do not have an action bar. Tap **复制** (Copy) below a saved assistant reply to copy it in full, or tap **选择文字** (Select text) to select part of its source text, including Markdown markup, on a separate page. Eligible replies also have Like, Dislike, and Bookmark buttons. Tap the bookmark to save the reply, then tap again to remove it. The server stores bookmarks independently of likes and dislikes. Highlighted icons show the current state. If the result is uncertain, first tap **核对反馈状态** (Check feedback status) below the reply. Tap **引用回复** (Quote reply) to add a removable quote above the composer and send it with your next message.
+Use the [Flutter version pinned in CI](.github/workflows/ci.yml), JDK 17, and the Android SDK. Running the app requires an Android device or emulator. Run the commands in the Chinese section above from this repository root.
 
-During a reply started on this device, the composer shows **停止回复** (Stop reply). Enter a new message or add an attachment to switch to **停止并发送** (Stop and send). The app sends the next message after it confirms the stop and syncs history. If it cannot confirm the stop, the next message stays in the composer. If the first message was also unsaved, **切换未发送草稿** (Switch unsent drafts) lets you recover both.
+The Android emulator can reach the host server at `http://10.0.2.2:12330`, or at `http://127.0.0.1:12330` after `adb reverse tcp:12330 tcp:12330`. If the emulator stalls at the splash screen, retry `flutter run` with `--no-enable-impeller --enable-software-rendering`. The Debug APK is at `build/app/outputs/flutter-apk/app-debug.apk`.
 
-### Manage conversations
-
-In the drawer, open **更多操作** (More actions) next to a topic session to rename or delete it. Renaming keeps the history and draft. Deleting permanently removes its chat history and feedback. The confirmation shows its scheduled jobs and web monitors. You can delete those too or move them to the default session. Deleting the active session returns you to the default session.
-
-### Settings
-
-Open **设置** (Settings) from the bottom bar or the chat drawer. In portrait or narrow windows, you can use the bottom bar to switch back to **聊天** (Chat) and open **外观** (Appearance), **服务器连接** (Server connection), **MCP 服务** (MCP servers), **Subagent**, **短信同步** (SMS sync), or **应用更新** (App updates) from the list. In landscape wide-screen layouts such as tablets, navigation moves to a vertical rail on the right to free vertical space, the session list becomes a collapsible left sidebar, and all **设置** items render in a unified master-detail split pane.
-
-### Appearance and theme mode
-
-Open **设置 → 外观** (Settings → Appearance) to toggle **跟随系统自动切换** (Follow system automatically) under **主题模式** (Theme mode). When turned off, you can choose **浅色** (Light) or **深色** (Dark) manually instead of following the system. Under **配色** (Color palette), choose Indigo (default), Forest Green, Warm Brown, or Violet. Changes take effect immediately and are saved only on this device.
-
-### Server connection
-
-Before the app is connected to a server, it shows a centered welcome sign-in screen. Once connected, open **设置 → 服务器连接** (Settings → Server connection) to inspect or update the server address and access key in the same card layout as other Settings pages. Confirmation for active runs or unsent drafts appears only when you tap **保存并连接** (Save & connect).
-
-### MCP servers
-
-Open **设置 → MCP 服务** (Settings → MCP servers) to add, edit, reconnect, or delete external MCP servers and control whether each server is enabled for chat. Per-subagent MCP opt-in selections are configured individually under **设置 → Subagent**.
-
-### Subagents
-
-Open **设置 → Subagent** to view all registered specialized subagents, toggle their unified enabled switch directly on the list or detail screen, inspect built-in prompts and tools, edit domain instructions (`AGENTS.md`), and opt in MCP servers per subagent. The SMS subagent is off by default and automatically enables when you turn on **同步新短信** or upload SMS messages.
-
-### Sync new SMS messages
-
-Open **设置 → 短信同步** (Settings → SMS sync), turn on **同步新短信** (Sync new SMS messages), and grant Android permission to receive SMS. The app captures only messages received after you turn sync on and sends their original text and sender to your connected Pi Muse server. HTTP connections transmit this data without encryption. Sync can continue in the background. While offline, the app encrypts pending messages on the device and resumes delivery when the network returns. Turning sync off or revoking permission pauses capture and uploads and keeps pending messages.
-
-If Android denies permission, tap **打开应用设置** (Open app settings) and grant access under **Permissions → SMS**. If Android reports a restricted setting, tap **Allow restricted settings** in the upper-right menu on the App info screen. Then grant SMS access or return to the app to retry. After your first grant, make sure **Sync new SMS messages** is on and send a new SMS to test it.
-
-The pending count is for new messages not yet uploaded. A new message may upload immediately, so check **上次确认成功** (Last confirmed) if the count stays at zero. Turning on **Sync new SMS messages** or uploading SMS automatically enables the SMS subagent on the server; if the server pauses intake, pending messages stay on the device and can be retried with **立即同步** (Sync now). If the connection expires, reconnect from **服务器连接** (Server connection). Signing in again or updating the server address keeps pending messages. If delivery is uncertain, the app checks the server first. Once that check confirms a message is absent, tap **立即同步** to retry.
-
-### Import SMS history
-
-In **设置 → 短信同步 → 历史短信导入** (Settings → SMS sync → SMS history), tap **导入历史短信** (Import SMS history). Grant Android permission to read SMS on the first import, then return and confirm **开始上传** (Start upload). The new-message sync switch can stay off. Import covers all sent and received SMS that Android lets the app read, with no date cutoff. It excludes drafts, unsent messages, MMS, RCS, and deleted messages. Message text, senders or recipients, and timestamps are sent to your connected Pi Muse server and may include sensitive data. HTTP connections are not encrypted.
-
-Keep this screen open during import. Leaving the screen, putting the app in the background, or tapping **暂停导入** (Pause import) pauses it. Return and tap **继续导入** (Continue import) to resume. The app shows imported, skipped, and unsuccessful counts. It does not truncate messages to fit the server contract. A repeat scan on the same installation skips previously confirmed history, but messages uploaded through realtime sync or another client may appear again.
-
-Import only writes messages to the server’s archive queue; it does not start model processing. If you later run archive processing on the server, it retains only the latest 2,000 processed archive messages by default. A full upload is not a permanent backup.
-
-### App updates
-
-The release build checks for updates at startup and every hour while the app is in the foreground. To check manually, open **设置 → 应用更新** (Settings → App updates). When connected to a Pi Muse server, updates are fetched from your server's mirrored release channel (`/updates/android/latest` and `/updates/android/apk/...`), avoiding direct GitHub rate limits on mobile devices; when disconnected, it falls back to GitHub Releases. When a new version is available, the app prefers the smaller APK that matches its running Android process architecture. If no matching APK is available, it downloads the universal `app-release.apk`. You can cancel the download and retry the same version manually during that app run. After checking the size, SHA-256, package ID, version and signing certificate, the app opens Android's installer in the foreground for you to confirm. If Android requires authorization, tap **打开授权设置** (Open permission settings), allow Pi Muse to install unknown apps, then return and tap **继续安装** (Continue installation).
-
-For a first install or if you are unsure which architecture your device uses, download `app-release.apk` from [Flutter Releases](https://github.com/yaotutu/pi-muse-flutter/releases). When the release provides split APKs, you can choose the one for `arm64-v8a`, `armeabi-v7a` or `x86_64`. Android updates require the same package ID and signing certificate. If a development debug build is installed, uninstall it before installing the release APK. Uninstalling clears the client's local data.
-
-### Automated builds and releases
-
-- A push to `main` starts the [release workflow](.github/workflows/release.yml). It increments the patch version and Android build number in `pubspec.yaml`, for example from `0.1.0+1` to `0.1.1+2`. It builds one universal APK and three split APKs, all with the same signing key and build number. After analysis, tests and APK verification succeed, it pushes the version commit and tag and uploads all four APKs to a draft. It verifies the size and SHA-256 of each uploaded APK before publishing. The workflow maintains the version field.
-- A manual `release` run builds all four APKs using the selected commit's current version and saves them as an Actions artifact. Pushes to `main` trigger version commits, tags and public releases.
-- Use `yaotutu/pi-muse-flutter` as the GitHub repository and make its Releases and APKs available to phones without authentication. Allow the release workflow's `GITHUB_TOKEN` to write to `main`, tags and Releases.
-- Flutter release APKs use a dedicated signing key, separate from the RN client's keystore. Configure the Base64-encoded keystore, store password, key alias and key password as Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Back up the keystore and password securely. Future releases need the same key to update installed release builds. Use the Debug APK for development.
-
-### Send attachments
-
-Tap **添加附件** on the left of the composer and choose images or text files in the Android file picker. Review or remove the files above the composer, then send them with or without a message. Each message can include up to four files and 8 MiB in total, with a shared limit of 100,000 bytes for text. Supported formats are PNG, JPEG, GIF, WebP, and valid UTF-8 text.
-
-Attachments appear with the user message after sending. Tap an image to preview it. Text attachments show their name and size. Image understanding depends on the model configured on the server. If delivery is uncertain, tap **核对发送结果**. Once the app confirms the message was not saved, it restores the original files and text to that conversation's draft.
-
-### Browse workspace files
-
-Open the menu in the top-left corner of the chat and tap **工作区文件**. Every conversation shares the same workspace on the connected server. Tap a folder to open it, use **刷新目录** to refresh the list, and use Back to return to its parent.
-
-Text files open as selectable source, including Markdown, HTML, and SVG. PNG, JPEG, GIF, and WebP images can be zoomed. Other binary files show their name and size. The server reads files up to 8 MiB. This screen provides browsing and previews.
-
-### Run and check locally
-
-Use Flutter 3.50.1, JDK 17 or a compatible version, Android SDK 36, and an Android emulator. Run the commands in the section above from this directory. An Android emulator can reach the host server at `http://10.0.2.2:12330`, or at `http://127.0.0.1:12330` after forwarding the port with `adb reverse tcp:12330 tcp:12330`. If the emulator stalls at the splash screen with default graphics, retry with `flutter run --no-enable-impeller --enable-software-rendering -d <android-device-id>`. Acceptance uses the backend from current source, a real model, and `/docs` rendered in a browser.
+See [AGENTS.md](AGENTS.md) for module ownership, checks, and acceptance, and the [Android release guide](docs/android-release.md) for signing and releases.
