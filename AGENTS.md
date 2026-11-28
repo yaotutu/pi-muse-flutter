@@ -38,7 +38,9 @@ Dart 文件采用 `snake_case.dart`，普通目录与 Markdown 文件用 ASCII �
 | `flutter run -d <android-device-id>` | 在指定设备或模拟器运行。 |
 | `cd android && ./gradlew :app:testDebugUnitTest` | 先完成 Debug APK 构建以准备本地 Gradle 包装器，再运行 Android 原生单元测试。 |
 
-在本仓库执行上述命令，模拟器连接、端口映射和图形回退见 [README](README.md)。代码变更完成 `flutter analyze`、`flutter test` 和 `flutter build apk --debug`，Kotlin 变更按影响覆盖原生测试。用户可见功能使用当前真实后端、外部模型、Android 模拟器和实际浏览器渲染的 `/docs` 验收。需要用户现场体验时打开模拟器窗口。
+在本仓库执行上述命令。代码变更完成 `flutter analyze`、`flutter test` 和 `flutter build apk --debug`，Kotlin 变更按影响覆盖原生测试。用户可见功能使用当前真实后端、外部模型、Android 设备和实际浏览器渲染的 `/docs` 验收。
+
+Android 设备验收优先使用用户提供的 `TB300FU` 实体平板。测试前用 `adb devices -l` 确认平板处于 `device` 状态，运行和测试命令显式指定该平板。只要平板能连接，就不启动或使用模拟器；仅在确认平板无法连接时，才回退到模拟器，并在验收说明中注明。设备连接与回退方法见 [README](README.md)。
 
 功能变化同步更新受影响的 README 和对应工程文档。公共手册中受影响的中英文页面按工作区文档规范同步。工程文档整理检查差异、引用、命名和规则一致性。版本由 CI 管理，手动改应用 ID、版本、签名、CI 或正式发布配置需明确授权。
 

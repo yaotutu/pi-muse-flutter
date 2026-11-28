@@ -30,6 +30,8 @@ flutter build apk --debug
 flutter run -d <android-device-id>
 ```
 
+本地设备验收优先使用 `TB300FU` 实体平板：用 `adb devices -l` 确认识别为 `device`，并将其设备序列号传给 `flutter run -d`。平板与开发机在同一网络时可填写开发机的局域网地址；通过 USB 连接时，也可执行 `adb -s <android-device-id> reverse tcp:12330 tcp:12330` 后在应用中填写 `http://127.0.0.1:12330`。仅在平板无法连接时回退到模拟器。
+
 在 Android 模拟器连接宿主机服务时，可填 `http://10.0.2.2:12330`。如果已执行 `adb reverse tcp:12330 tcp:12330`，也可填 `http://127.0.0.1:12330`。模拟器卡在启动画面时，可加 `--no-enable-impeller --enable-software-rendering` 复验。Debug APK 位于 `build/app/outputs/flutter-apk/app-debug.apk`。
 
 模块职责、门禁和真实验收见 [AGENTS.md](AGENTS.md)，签名与发版见 [Android 发布指南](docs/android-release.md)。
@@ -53,6 +55,8 @@ The [Pi Muse user manual](https://github.com/yaotutu/pi-muse/blob/main/docs/manu
 ### Local development
 
 Use the [Flutter version pinned in CI](.github/workflows/ci.yml), JDK 17, and the Android SDK. Running the app requires an Android device or emulator. Run the commands in the Chinese section above from this repository root.
+
+For local device acceptance, use the physical `TB300FU` tablet first. Check that `adb devices -l` lists it as `device` and pass its serial to `flutter run -d`. On the same network, use the development machine’s LAN address. Over USB, run `adb -s <android-device-id> reverse tcp:12330 tcp:12330` and enter `http://127.0.0.1:12330` in the app. Use an emulator only if the tablet cannot connect.
 
 The Android emulator can reach the host server at `http://10.0.2.2:12330`, or at `http://127.0.0.1:12330` after `adb reverse tcp:12330 tcp:12330`. If the emulator stalls at the splash screen, retry `flutter run` with `--no-enable-impeller --enable-software-rendering`. The Debug APK is at `build/app/outputs/flutter-apk/app-debug.apk`.
 
