@@ -24,6 +24,8 @@ ChatController _chatWithHistory(List<ChatMessage> history) {
 
 class _MessageApi extends SessionTestApi {
   final runFrames = StreamController<SseFrame>();
+  final workspaceFrames = StreamController<SseFrame>();
+  Completer<Json>? stopResult;
   final writes = <Json>[];
   final submissions = <Json>[];
   final stops = <Json>[];
@@ -37,9 +39,13 @@ class _MessageApi extends SessionTestApi {
   }
 
   @override
+  Stream<SseFrame> events() => workspaceFrames.stream;
+
+  @override
   Future<Json> post(String path, [Json? body]) async {
     expect(path, '/api/conversation/stop');
     stops.add(body!);
+    if (stopResult case final result?) return result.future;
     return {'stopped': false};
   }
 
@@ -564,6 +570,56 @@ void main() {
     expect(api.submissions, hasLength(1));
     expect(tester.widget<TextField>(composer).controller!.text, 'New question');
     await api.runFrames.close();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a remote reply can be stopped without sending the local draft', (
+    tester,
+  ) async {
+    final api = _MessageApi()..stopResult = Completer<Json>();
+    final chat = ChatController(api, () => api);
+    addTearDown(chat.dispose);
+    chat.start();
+    api.workspaceFrames.add(
+      const SseFrame(
+        event: 'ready',
+        data: {
+          'instanceId': 'test-instance',
+          'sessionStatuses': [
+            {
+              'sessionId': mainSession,
+              'runId': 'remote-run',
+              'revision': 1,
+              'status': 'running',
+            },
+          ],
+          'pendingApprovals': [],
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatPage(chat: chat, onReconnect: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '这条是本机草稿');
+    await tester.pump();
+    Finder action(String label) => find.byWidgetPredicate(
+      (widget) => widget is IconButton && widget.tooltip == label,
+    );
+    final stop = action('停止回复');
+    expect(tester.widget<IconButton>(stop).onPressed, isNotNull);
+    await tester.tap(stop);
+    await tester.pump();
+    final stopping = action('正在停止回复');
+    expect(tester.widget<IconButton>(stopping).onPressed, isNull);
+    expect(api.stops, [
+      {'sessionId': mainSession, 'runId': 'remote-run'},
+    ]);
+    expect(api.submissions, isEmpty);
+    expect(chat.active.draft, '这条是本机草稿');
+    api.stopResult!.complete({'stopped': true});
     await tester.pumpAndSettle();
   });
 

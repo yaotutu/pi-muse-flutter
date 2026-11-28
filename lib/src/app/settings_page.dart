@@ -102,46 +102,96 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final split = layout.useSplitPane;
     final entries = _entries;
     final active = entries.firstWhere(
       (entry) => entry.section == selected && entry.enabled,
       orElse: () => entries.first,
     );
+    final groups = <String, List<_SettingsEntry>>{};
+    for (final entry in entries) {
+      final group = switch (entry.section) {
+        SettingsSection.appearance ||
+        SettingsSection.connection ||
+        SettingsSection.updates => '应用与连接',
+        SettingsSection.mcp ||
+        SettingsSection.subagents ||
+        SettingsSection.smsSync => '扩展与同步',
+      };
+      (groups[group] ??= []).add(entry);
+    }
     final menuList = ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.fromLTRB(split ? 8 : 16, 8, split ? 8 : 16, 16),
       children: [
-        for (final entry in entries)
-          ListTile(
-            leading: Icon(entry.icon),
-            title: Text(entry.label),
-            enabled: entry.enabled,
-            selected: split && active.section == entry.section,
-            selectedColor: colors.onSecondaryContainer,
-            selectedTileColor: colors.secondaryContainer,
-            trailing: split ? null : const Icon(Icons.chevron_right),
-            onTap: !entry.enabled
-                ? null
-                : () {
-                    if (split) {
-                      onSelected(entry.section);
-                    } else {
-                      Navigator.of(
-                        context,
-                      ).push<void>(MaterialPageRoute(builder: entry.builder));
-                    }
-                  },
+        for (final group in groups.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            child: Semantics(
+              header: true,
+              child: Text(
+                group.key,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
           ),
+          Material(
+            color: split ? colors.surface : colors.surfaceContainerLowest,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: split
+                  ? BorderSide.none
+                  : BorderSide(color: colors.outlineVariant),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (index, entry) in group.value.indexed) ...[
+                  if (!split && index > 0)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    shape: split
+                        ? RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          )
+                        : null,
+                    leading: Icon(entry.icon),
+                    title: Text(entry.label),
+                    subtitle: entry.enabled ? null : const Text('服务器连接已失效'),
+                    enabled: entry.enabled,
+                    selected: split && active.section == entry.section,
+                    selectedColor: colors.onSecondaryContainer,
+                    selectedTileColor: colors.secondaryContainer,
+                    trailing: split || !entry.enabled
+                        ? null
+                        : const Icon(Icons.chevron_right),
+                    onTap: !entry.enabled
+                        ? null
+                        : () {
+                            if (split) {
+                              onSelected(entry.section);
+                            } else {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(builder: entry.builder),
+                              );
+                            }
+                          },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
       ],
     );
 
     final master = Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        toolbarHeight: layout.toolbarHeight,
-        title: const Text('设置'),
-      ),
+      appBar: AppBar(automaticallyImplyLeading: false, title: const Text('设置')),
       body: SafeArea(
         top: false,
         child: split

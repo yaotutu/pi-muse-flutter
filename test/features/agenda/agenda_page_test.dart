@@ -244,6 +244,83 @@ void main() {
     },
   );
 
+  testWidgets('phone agenda leaves room for search when the keyboard opens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.7;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final api = AgendaTestApi()..items = [agendaItem('item', '取快递')];
+    final chat = ChatController(api, () => api)..synchronized = true;
+    final appearance = AppearanceSettings(
+      readPalette: () async => null,
+      writePalette: (_) async {},
+    );
+    addTearDown(chat.dispose);
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorkspacePage(
+          chat: chat,
+          appearance: appearance,
+          connectionBuilder: (_) => const SizedBox(),
+        ),
+      ),
+    );
+    await tester.tap(find.text('日程'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GridView), findsOneWidget);
+    final listBounds = tester.getRect(find.byType(ListView));
+    expect(
+      listBounds.bottom,
+      closeTo(tester.getTopLeft(find.byType(NavigationBar)).dy, 1),
+    );
+
+    await tester.tap(find.byTooltip('搜索事项'));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    expect(find.byType(GridView), findsNothing);
+    expect(find.text('取快递').hitTestable(), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '快递');
+    await tester.tap(find.byTooltip('应用搜索'));
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(api.agendaQueries.any((query) => query?['q'] == '快递'), isTrue);
+    expect(find.byType(GridView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a missing item shows a retry instead of a blank edit form', (
+    tester,
+  ) async {
+    final api = AgendaTestApi();
+    final agenda = AgendaController(
+      client: AgendaClient(api),
+      events: const Stream.empty(),
+    );
+    addTearDown(agenda.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AgendaItemPage(agenda: agenda, itemId: 'item'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('事项不存在或已被删除'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('保存'), findsNothing);
+    expect(agenda.notice, isNull);
+    api.items = [agendaItem('item', '交报告')];
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('交报告'), findsOneWidget);
+    expect(find.text('保存').hitTestable(), findsOneWidget);
+  });
+
   testWidgets(
     'wide landscape splits the agenda into a calendar pane and an independent list pane',
     (tester) async {
@@ -374,7 +451,8 @@ void main() {
       expect(api.agendaWrites.first.$2?['completed'], isTrue);
       expect(find.text('重新打开'), findsOneWidget);
 
-      // 回到竖屏恢复单列表单，保存按钮仍跟在内容后面。
+      // 竖屏恢复单列表单，弹出键盘也能从底部保存。
+      addTearDown(tester.view.resetViewInsets);
       tester.view.physicalSize = const Size(390, 780);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('agenda-item-pane-divider')), findsNothing);
@@ -382,8 +460,12 @@ void main() {
         tester.getTopLeft(title).dy,
         lessThan(tester.getTopLeft(schedule).dy),
       );
-      expect(find.text('保存'), findsOneWidget);
-      expect(find.text('重新打开'), findsOneWidget);
+      await tester.tap(title);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      expect(find.text('保存').hitTestable(), findsOneWidget);
+      expect(find.text('重新打开').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 }

@@ -358,7 +358,7 @@ void main() {
         final before = api.agendaQueries.length;
 
         final item = await controller.setCompleted(
-          (await controller.read('a'))!,
+          await controller.read('a'),
           true,
         );
 
@@ -389,10 +389,7 @@ void main() {
       addTearDown(controller.dispose);
       addTearDown(events.close);
 
-      final item = await controller.setPinned(
-        (await controller.read('a'))!,
-        true,
-      );
+      final item = await controller.setPinned(await controller.read('a'), true);
 
       expect(item, isNull);
       expect(controller.notice, '内容格式无效或超出长度限制');

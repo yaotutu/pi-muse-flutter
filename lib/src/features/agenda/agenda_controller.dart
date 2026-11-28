@@ -156,17 +156,8 @@ class AgendaController extends ChangeNotifier {
     await refresh();
   }
 
-  /// 读取单个事项。
-  Future<AgendaItem?> read(String id) async {
-    try {
-      return await _client.get(id);
-    } catch (failure) {
-      if (_disposed) return null;
-      notice = agendaErrorMessage(failure);
-      _notify();
-      return null;
-    }
-  }
+  /// 读取单个事项。错误交给详情页展示，不覆盖列表的状态提示。
+  Future<AgendaItem> read(String id) => _client.get(id);
 
   /// 新建事项。
   Future<AgendaItem?> create({

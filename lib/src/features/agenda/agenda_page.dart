@@ -8,9 +8,16 @@ import 'agenda_models.dart';
 
 /// 日程页。上面是月历，下面是事项列表，两者读同一份服务端事实。
 class AgendaPage extends StatefulWidget {
-  const AgendaPage({super.key, required this.agenda});
+  const AgendaPage({
+    super.key,
+    required this.agenda,
+    required this.keyboardVisible,
+  });
 
   final AgendaController agenda;
+
+  // 外壳统一处理键盘避让；这里接收外壳移除 viewInsets 之前的状态。
+  final bool keyboardVisible;
 
   @override
   State<AgendaPage> createState() => _AgendaPageState();
@@ -115,7 +122,7 @@ class _AgendaPageState extends State<AgendaPage> {
             icon: Icon(_searching ? Icons.search_off : Icons.search),
             onPressed: () {
               setState(() => _searching = !_searching);
-              if (!_searching && _search.text.isNotEmpty) {
+              if (!_searching) {
                 _search.clear();
                 unawaited(_agenda.setQuery(''));
               }
@@ -138,7 +145,7 @@ class _AgendaPageState extends State<AgendaPage> {
         child: LayoutBuilder(
           builder: (context, constraints) => _isWide(constraints)
               ? _buildWideLayout(context)
-              : _buildNarrowLayout(context),
+              : _buildNarrowLayout(context, constraints.maxHeight),
         ),
       ),
     );
@@ -154,14 +161,14 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   /// 窄屏与竖屏布局：上方月历，下方筛选与列表。
-  Widget _buildNarrowLayout(BuildContext context) {
+  Widget _buildNarrowLayout(BuildContext context, double availableHeight) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_searching) _buildSearchField(),
-        if (MediaQuery.viewInsetsOf(context).bottom == 0)
-          Flexible(
-            flex: 2,
+        if (!widget.keyboardVisible)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: availableHeight * 0.57),
             child: SingleChildScrollView(
               child: _AgendaCalendarCard(
                 month: _agenda.month,
@@ -228,11 +235,17 @@ class _AgendaPageState extends State<AgendaPage> {
         controller: _search,
         autofocus: true,
         textInputAction: TextInputAction.search,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           hintText: '搜索事项标题或备注',
-          prefixIcon: Icon(Icons.search),
           isDense: true,
-          border: OutlineInputBorder(),
+          suffixIcon: IconButton(
+            tooltip: '应用搜索',
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+              unawaited(_searchItems(_search.text));
+            },
+          ),
         ),
         onSubmitted: _searchItems,
       ),
@@ -299,7 +312,11 @@ class _AgendaPageState extends State<AgendaPage> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            _agenda.selectedDay == null ? '还没有事项' : '这一天没有事项',
+            _agenda.query.isNotEmpty
+                ? '没有符合搜索条件的事项'
+                : _agenda.selectedDay == null
+                ? '还没有事项'
+                : '这一天没有事项',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -359,6 +376,15 @@ class _AgendaCalendarCard extends StatelessWidget {
     final colors = theme.colorScheme;
     final marks = _marksByDay();
     final today = DateTime.now();
+    final scaler = MediaQuery.textScalerOf(context);
+    final dayStyle = theme.textTheme.bodySmall!;
+    final fontSize = dayStyle.fontSize ?? 12;
+    final numberHeight = scaler.scale(fontSize) * (dayStyle.height ?? 1.33);
+    // 日期数字随系统字号增高，同时为三个状态图标保留独立一行。
+    final cellHeight = (numberHeight + 18).clamp(
+      compact ? 36.0 : 44.0,
+      double.infinity,
+    );
     final first = DateTime(month.year, month.month);
     final leading = first.weekday - 1;
     final days = DateTime(month.year, month.month + 1, 0).day;
@@ -412,7 +438,7 @@ class _AgendaCalendarCard extends StatelessWidget {
             padding: EdgeInsets.zero,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: compact ? 36 : 44,
+              mainAxisExtent: cellHeight,
             ),
             itemCount: cells,
             itemBuilder: (context, index) {
@@ -442,7 +468,7 @@ class _AgendaCalendarCard extends StatelessWidget {
                     children: [
                       Text(
                         '$dayNumber',
-                        style: theme.textTheme.bodySmall?.copyWith(
+                        style: dayStyle.copyWith(
                           color: selected
                               ? colors.onSecondaryContainer
                               : colors.onSurface,
@@ -460,7 +486,7 @@ class _AgendaCalendarCard extends StatelessWidget {
                               if (dayMarks.contains(mark))
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 1,
+                                    horizontal: 0.5,
                                   ),
                                   child: Icon(
                                     _markIcon(mark),
@@ -479,8 +505,9 @@ class _AgendaCalendarCard extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              runSpacing: 4,
               children: [
                 for (final mark in _CalendarMark.values)
                   Padding(
@@ -572,7 +599,11 @@ class _AgendaFilterBar extends StatelessWidget {
     final colors = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Row(
+      child: OverflowBar(
+        alignment: MainAxisAlignment.spaceBetween,
+        overflowAlignment: OverflowBarAlignment.start,
+        overflowSpacing: 4,
+        spacing: 12,
         children: [
           SegmentedButton<AgendaScope>(
             segments: [
@@ -583,7 +614,6 @@ class _AgendaFilterBar extends StatelessWidget {
             showSelectedIcon: false,
             onSelectionChanged: (selection) => onScopeChanged(selection.first),
           ),
-          const Spacer(),
           if (selectedDay case final day?)
             InputChip(
               label: Text(
@@ -647,11 +677,13 @@ class _AgendaItemTile extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final line in lines)
+                for (final (text, isNote) in lines)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      line,
+                      text,
+                      maxLines: isNote ? 2 : null,
+                      overflow: isNote ? TextOverflow.ellipsis : null,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -672,7 +704,7 @@ class _AgendaItemTile extends StatelessWidget {
     );
   }
 
-  List<String> _details(BuildContext context) {
+  List<(String, bool)> _details(BuildContext context) {
     final lines = <String>[];
     final schedule = item.schedule?.moment;
     if (schedule != null) {
@@ -692,9 +724,10 @@ class _AgendaItemTile extends StatelessWidget {
           : '提醒：${formatAgendaMoment(context, first)} 等 ${pending.length} 条';
       lines.add(text);
     }
-    if (item.notes != null && item.notes!.trim().isNotEmpty) {
-      lines.add(item.notes!.trim());
-    }
-    return lines;
+    return [
+      for (final line in lines) (line, false),
+      if (item.notes?.trim() case final note? when note.isNotEmpty)
+        (note, true),
+    ];
   }
 }

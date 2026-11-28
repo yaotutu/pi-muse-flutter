@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../network/api.dart';
+import 'agenda_client.dart';
 import 'agenda_controller.dart';
 import 'agenda_models.dart';
 
@@ -40,6 +41,8 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   bool _scheduleChanged = false;
   bool _dueChanged = false;
   String? _error;
+  String? _readError;
+  int _readGeneration = 0;
   int _invalidations = 0;
   Timer? _reminderTimer;
 
@@ -71,12 +74,15 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   }
 
   Future<void> _load() async {
-    final item = await widget.agenda.read(widget.itemId!);
-    if (!mounted) return;
-    setState(() {
-      _loading = false;
-      final previous = _item;
-      if (item != null) {
+    final generation = ++_readGeneration;
+    try {
+      final item = await widget.agenda.read(widget.itemId!);
+      if (!mounted || generation != _readGeneration) return;
+      final firstRead = _item == null;
+      setState(() {
+        _loading = false;
+        _readError = null;
+        final previous = _item;
         if (previous == null || _title.text == previous.title) {
           _title.text = item.title;
         }
@@ -84,11 +90,17 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
           _notes.text = item.notes ?? '';
         }
         _applyItemTimes(item);
-      }
-      _item = item;
-    });
-    if (item != null) _scheduleReminderRefresh(item);
-    if (widget.focusTime) _focusTimeSection();
+        _item = item;
+      });
+      _scheduleReminderRefresh(item);
+      if (firstRead && widget.focusTime) _focusTimeSection();
+    } catch (failure) {
+      if (!mounted || generation != _readGeneration) return;
+      setState(() {
+        _loading = false;
+        _readError = agendaErrorMessage(failure);
+      });
+    }
   }
 
   /// 提醒到点后回读一次，提醒触发状态由服务端判定。
@@ -246,6 +258,7 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
       setState(() => _error = '标题不能为空');
       return;
     }
+    FocusScope.of(context).unfocus();
     setState(() {
       _saving = true;
       _error = null;
@@ -366,11 +379,12 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   @override
   Widget build(BuildContext context) {
     final item = _item;
+    final readError = _readError;
     return Scaffold(
       appBar: AppBar(
         title: Text(_creating ? '新建事项' : '事项详情'),
         actions: [
-          if (item != null)
+          if (item != null && _readError == null)
             IconButton(
               tooltip: item.pinned ? '取消置顶' : '置顶',
               icon: Icon(
@@ -384,10 +398,40 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
         top: false,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
+            : readError != null
+            ? Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(readError, textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: () {
+                          setState(() => _loading = true);
+                          unawaited(_load());
+                        },
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
             : LayoutBuilder(
-                builder: (context, constraints) => _isWide(constraints)
-                    ? _buildWideLayout(context)
-                    : _buildNarrowLayout(context),
+                builder: (context, constraints) {
+                  final wide = _isWide(constraints);
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: wide
+                            ? _buildWideLayout(context)
+                            : _buildNarrowLayout(context),
+                      ),
+                      _buildActionBar(context),
+                    ],
+                  );
+                },
               ),
       ),
     );
@@ -402,11 +446,10 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
         constraints.maxWidth >= _wideMinWidth;
   }
 
-  /// 窄屏与竖屏布局：单列表单，保存与完成按钮跟在内容后面。
+  /// 窄屏与竖屏布局：单列滚动表单。
   Widget _buildNarrowLayout(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final item = _item;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
@@ -444,25 +487,6 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
               ),
             ),
           ),
-        if (_error case final error?) ...[
-          const SizedBox(height: 12),
-          Text(
-            error,
-            style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
-          ),
-        ],
-        const SizedBox(height: 20),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? '正在保存…' : '保存'),
-        ),
-        if (item != null) ...[
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _toggleCompleted,
-            child: Text(item.completed ? '重新打开' : '标记完成'),
-          ),
-        ],
       ],
     );
   }
@@ -472,82 +496,75 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
   Widget _buildWideLayout(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 5,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: _title,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: '标题',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _notes,
-                        minLines: 4,
-                        maxLines: 12,
-                        decoration: const InputDecoration(
-                          labelText: '备注',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
+          flex: 5,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _title,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: '标题',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-              ),
-              VerticalDivider(
-                key: const Key('agenda-item-pane-divider'),
-                width: 1,
-                thickness: 1,
-                color: colors.outlineVariant,
-              ),
-              Expanded(
-                flex: 6,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _scheduleSection(),
-                      const SizedBox(height: 12),
-                      _dueSection(),
-                      const SizedBox(height: 12),
-                      _reminderSection(),
-                      if (widget.agenda.instanceZone case final zone?)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text(
-                            '服务端时区：$zone',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                    ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notes,
+                  minLines: 4,
+                  maxLines: 12,
+                  decoration: const InputDecoration(
+                    labelText: '备注',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        _buildActionBar(context),
+        VerticalDivider(
+          key: const Key('agenda-item-pane-divider'),
+          width: 1,
+          thickness: 1,
+          color: colors.outlineVariant,
+        ),
+        Expanded(
+          flex: 6,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _scheduleSection(),
+                const SizedBox(height: 12),
+                _dueSection(),
+                const SizedBox(height: 12),
+                _reminderSection(),
+                if (widget.agenda.instanceZone case final zone?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      '服务端时区：$zone',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  /// 宽横屏底部的操作栏，保存与完成不需要滚动就能点到。
+  /// 固定底部操作栏，两种布局下都不必滚动到表单末尾。
   Widget _buildActionBar(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -560,30 +577,39 @@ class _AgendaItemPageState extends State<AgendaItemPage> {
           border: Border(top: BorderSide(color: colors.outlineVariant)),
         ),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (_error case final error?) ...[
-              Expanded(
-                child: Text(
-                  error,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.error,
+            if (_error case final error?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    error,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.error,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-            ] else
-              const Spacer(),
-            if (item != null) ...[
-              OutlinedButton(
-                onPressed: _toggleCompleted,
-                child: Text(item.completed ? '重新打开' : '标记完成'),
-              ),
-              const SizedBox(width: 12),
-            ],
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: Text(_saving ? '正在保存…' : '保存'),
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              overflowAlignment: OverflowBarAlignment.end,
+              spacing: 8,
+              overflowSpacing: 4,
+              children: [
+                if (item != null)
+                  OutlinedButton(
+                    onPressed: _saving ? null : _toggleCompleted,
+                    child: Text(item.completed ? '重新打开' : '标记完成'),
+                  ),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: Text(_saving ? '正在保存…' : '保存'),
+                ),
+              ],
             ),
           ],
         ),

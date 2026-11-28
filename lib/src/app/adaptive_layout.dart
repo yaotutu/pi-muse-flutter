@@ -201,20 +201,28 @@ class _WorkspaceBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    Color destinationColor(Set<WidgetState> states, Color selected) {
+      if (states.contains(WidgetState.disabled)) {
+        return colors.onSurface.withValues(alpha: 0.38);
+      }
+      return states.contains(WidgetState.selected)
+          ? selected
+          : colors.onSurfaceVariant;
+    }
+
     final bar = NavigationBarTheme(
       data: NavigationBarThemeData(
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          final selected = states.contains(WidgetState.selected);
           return theme.textTheme.labelMedium?.copyWith(
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? colors.primary : colors.onSurfaceVariant,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w600
+                : FontWeight.w500,
+            color: destinationColor(states, colors.primary),
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            color: states.contains(WidgetState.selected)
-                ? colors.onSecondaryContainer
-                : colors.onSurfaceVariant,
+            color: destinationColor(states, colors.onSecondaryContainer),
             size: 24,
           ),
         ),

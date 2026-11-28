@@ -217,13 +217,13 @@ class _ChatPageState extends State<ChatPage> {
             elevation: 1,
             scrolledUnderElevation: 1,
             titleSpacing: 0,
-            leadingWidth: 76,
+            leadingWidth: kToolbarHeight,
             leading: widget.navigationLeading,
             title: _ChatTitle(title: title, activity: activity),
             centerTitle: true,
             actions: [
               SizedBox(
-                width: 76,
+                width: kToolbarHeight,
                 child: Center(
                   child: IconButton(
                     tooltip: '会话详情',

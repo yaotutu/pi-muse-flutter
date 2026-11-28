@@ -74,6 +74,35 @@ void main() {
     return (chat, appearance);
   }
 
+  testWidgets('the phone bottom bar communicates a disabled destination', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final (chat, appearance) = createDeps();
+    addTearDown(chat.dispose);
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(buildApp(chat, appearance));
+    final bar = find.byType(NavigationBar);
+    final news = find.widgetWithText(NavigationDestination, '新闻');
+    expect(tester.widget<NavigationDestination>(news).enabled, isFalse);
+    final data = NavigationBarTheme.of(tester.element(bar));
+    final colors = Theme.of(tester.element(bar)).colorScheme;
+    expect(
+      data.labelTextStyle!.resolve({WidgetState.disabled})!.color,
+      colors.onSurface.withValues(alpha: 0.38),
+    );
+    expect(
+      data.iconTheme!.resolve({WidgetState.disabled})!.color,
+      colors.onSurface.withValues(alpha: 0.38),
+    );
+    await tester.tap(news);
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(bar).selectedIndex, 0);
+  });
+
   testWidgets(
     'portrait tablet keeps bottom NavigationBar even with soft keyboard open',
     (tester) async {
@@ -160,6 +189,34 @@ void main() {
     },
   );
 
+  testWidgets('portrait settings explain unavailable server entries', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final (chat, appearance) = createDeps();
+    chat.expired = true;
+    addTearDown(chat.dispose);
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(buildApp(chat, appearance));
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('应用与连接'), findsOneWidget);
+    expect(find.text('扩展与同步'), findsOneWidget);
+    final unavailable = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, 'MCP 服务'),
+    );
+    expect(unavailable.enabled, isFalse);
+    expect(unavailable.onTap, isNull);
+    expect(find.text('服务器连接已失效'), findsNWidgets(2));
+    await tester.tap(find.text('外观'));
+    await tester.pumpAndSettle();
+    expect(find.text('主题模式'), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+  });
+
   testWidgets(
     'landscape tablet opens Settings in split-pane master-detail with right rail',
     (tester) async {
@@ -179,6 +236,9 @@ void main() {
       // 右侧导航常驻，左侧为设置目录，中间直接展示默认详情页「外观」。
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.text('外观'), findsNWidgets(2));
+      expect(find.byType(AppBar), findsNWidgets(2));
+      expect(tester.getRect(find.widgetWithText(AppBar, '设置')).bottom, 48);
+      expect(tester.getRect(find.widgetWithText(AppBar, '外观')).bottom, 48);
       expect(find.text('主题模式'), findsOneWidget);
       expect(find.text('配色'), findsOneWidget);
 

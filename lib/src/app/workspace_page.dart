@@ -195,49 +195,57 @@ class _WorkspacePageState extends State<WorkspacePage> {
         hideBottomBar: _destination != _settingsIndex && compact,
         body: KeyedSubtree(
           key: _contentKey,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 聊天页始终保留在树上，切到日程时草稿和阅读位置都不会丢。
-              Offstage(
-                offstage: !onChat,
-                child: TickerMode(
-                  enabled: onChat,
-                  child: ChatPage(
-                    chat: widget.chat,
-                    compact: compact,
-                    toolbarHeight: layout.toolbarHeight,
-                    navigationLeading: _chatNavigation(layout),
-                    onReconnect: () => _openConnection(layout),
-                    onOpenAgendaItem: _agenda.openItem,
-                  ),
-                ),
-              ),
-              if (_agendaBuilt)
+          child: AppBarTheme(
+            data: AppBarTheme.of(
+              context,
+            ).copyWith(toolbarHeight: layout.toolbarHeight),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 聊天页始终保留在树上，切到日程时草稿和阅读位置都不会丢。
                 Offstage(
-                  offstage: _destination != _agendaIndex,
+                  offstage: !onChat,
                   child: TickerMode(
-                    enabled: _destination == _agendaIndex,
-                    child: AgendaPage(agenda: _agenda),
+                    enabled: onChat,
+                    child: ChatPage(
+                      chat: widget.chat,
+                      compact: compact,
+                      toolbarHeight: layout.toolbarHeight,
+                      navigationLeading: _chatNavigation(layout),
+                      onReconnect: () => _openConnection(layout),
+                      onOpenAgendaItem: _agenda.openItem,
+                    ),
                   ),
                 ),
-              if (_destination == _settingsIndex)
-                ListenableBuilder(
-                  listenable: widget.chat,
-                  builder: (_, _) => SettingsPage(
-                    layout: layout,
-                    selected: _settingsSection,
-                    onSelected: (section) =>
-                        setState(() => _settingsSection = section),
-                    api: widget.chat.api,
-                    connectionExpired: widget.chat.expired,
-                    connectionUsesHttp: widget.connectionUsesHttp,
-                    connectionBuilder: widget.connectionBuilder,
-                    appearance: widget.appearance,
-                    updates: widget.updates,
+                if (_agendaBuilt)
+                  Offstage(
+                    offstage: _destination != _agendaIndex,
+                    child: TickerMode(
+                      enabled: _destination == _agendaIndex,
+                      child: AgendaPage(
+                        agenda: _agenda,
+                        keyboardVisible: compact,
+                      ),
+                    ),
                   ),
-                ),
-            ],
+                if (_destination == _settingsIndex)
+                  ListenableBuilder(
+                    listenable: widget.chat,
+                    builder: (_, _) => SettingsPage(
+                      layout: layout,
+                      selected: _settingsSection,
+                      onSelected: (section) =>
+                          setState(() => _settingsSection = section),
+                      api: widget.chat.api,
+                      connectionExpired: widget.chat.expired,
+                      connectionUsesHttp: widget.connectionUsesHttp,
+                      connectionBuilder: widget.connectionBuilder,
+                      appearance: widget.appearance,
+                      updates: widget.updates,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

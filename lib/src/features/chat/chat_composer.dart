@@ -90,9 +90,11 @@ class ChatComposer extends StatelessWidget {
                 color: colors.surfaceContainerLowest,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(26),
-                  side: focus.hasFocus
-                      ? BorderSide(color: colors.primary)
-                      : BorderSide.none,
+                  side: BorderSide(
+                    color: focus.hasFocus
+                        ? colors.primary
+                        : colors.outlineVariant,
+                  ),
                 ),
                 child: child,
               ),
@@ -154,26 +156,40 @@ class ChatComposer extends StatelessWidget {
                           value.text.trim().isNotEmpty ||
                           conversation.draftAttachments.isNotEmpty;
                       final waiting = conversation.waitingToSend;
-                      final action = running
-                          ? chat.canStop(sendNext: hasContent)
-                                ? hasContent
-                                      ? chat.stopAndSend
-                                      : chat.stop
-                                : null
-                          : chat.canSend && hasContent
-                          ? chat.send
-                          : null;
-                      final label = waiting
-                          ? '正在停止并准备发送'
-                          : running
-                          ? hasContent
-                                ? localRunning
-                                      ? '停止并发送'
-                                      : '请先停止或等待当前回复完成'
-                                : '停止回复'
-                          : '发送';
+                      final stopping =
+                          conversation.submission?.stopping == true ||
+                          conversation.stoppingActiveRun;
+                      final busy = waiting || stopping;
+                      // 其他设备发起的运行不能自动接发本机草稿；仍可单独停止。
+                      final sendNext =
+                          localRunning &&
+                          hasContent &&
+                          chat.canStop(sendNext: true);
+                      final (label, icon, action) = switch ((
+                        waiting,
+                        stopping,
+                        running,
+                      )) {
+                        (true, _, _) => ('正在停止并准备发送', Icons.sync, null),
+                        (_, true, _) => ('正在停止回复', Icons.sync, null),
+                        (_, _, true) when sendNext => (
+                          '停止并发送',
+                          Icons.send_outlined,
+                          chat.stopAndSend,
+                        ),
+                        (_, _, true) => (
+                          '停止回复',
+                          Icons.stop_rounded,
+                          chat.canStop(sendNext: false) ? chat.stop : null,
+                        ),
+                        _ => (
+                          '发送',
+                          Icons.arrow_upward_rounded,
+                          hasContent && chat.canSend ? chat.send : null,
+                        ),
+                      };
                       return IconButton(
-                        key: ValueKey(running || waiting ? 'stop' : 'send'),
+                        key: ValueKey(running || busy ? 'stop' : 'send'),
                         tooltip: label,
                         onPressed: action,
                         padding: EdgeInsets.zero,
@@ -186,19 +202,15 @@ class ChatComposer extends StatelessWidget {
                             shape: BoxShape.circle,
                             color: action == null
                                 ? colors.surfaceContainerHigh
-                                : colors.tertiary,
+                                : colors.primary,
                           ),
                           child: SizedBox.square(
                             dimension: 36,
                             child: Icon(
-                              running || waiting
-                                  ? hasContent
-                                        ? Icons.send_outlined
-                                        : Icons.stop_rounded
-                                  : Icons.arrow_upward_rounded,
+                              icon,
                               color: action == null
-                                  ? colors.outline
-                                  : colors.onTertiary,
+                                  ? colors.onSurfaceVariant
+                                  : colors.onPrimary,
                               size: 20,
                             ),
                           ),
